@@ -2,9 +2,7 @@ use axum::{
     body::{Body, to_bytes},
     http::{Request, StatusCode, header},
 };
-use codex_unified_provider_api::{
-    ApiProtocol, ApiProviderResolver, ApiRoute, ApiRouteTable,
-};
+use codex_unified_provider_api::{ApiProtocol, ApiProviderResolver, ApiRoute, ApiRouteTable};
 use codex_unifiedd::{AppConfig, app};
 use serde_json::{Value, json};
 use std::sync::Arc;
@@ -64,23 +62,22 @@ fn request_payload(model: &str, turn_id: &str) -> Value {
 async fn exercise(model: &str, turn_id: &str) {
     let request = Request::builder()
         .method("POST")
-        .uri(format!(
-            "/_codex-unified/{CAPABILITY}/v1/responses"
-        ))
+        .uri(format!("/_codex-unified/{CAPABILITY}/v1/responses"))
         .header(header::CONTENT_TYPE, "application/json")
         .body(Body::from(
-            serde_json::to_vec(&request_payload(model, turn_id))
-                .expect("serialize request"),
+            serde_json::to_vec(&request_payload(model, turn_id)).expect("serialize request"),
         ))
         .expect("build request");
 
     let response = test_app().oneshot(request).await.expect("router response");
     assert_eq!(response.status(), StatusCode::OK);
-    assert!(response
-        .headers()
-        .get(header::CONTENT_TYPE)
-        .and_then(|value| value.to_str().ok())
-        .is_some_and(|value| value.starts_with("text/event-stream")));
+    assert!(
+        response
+            .headers()
+            .get(header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+            .is_some_and(|value| value.starts_with("text/event-stream"))
+    );
 
     let body = to_bytes(response.into_body(), 1024 * 1024)
         .await
