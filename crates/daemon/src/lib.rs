@@ -370,9 +370,7 @@ mod tests {
     use tokio_tungstenite::{
         MaybeTlsStream, WebSocketStream, connect_async,
         tungstenite::{
-            Message as TungsteniteMessage,
-            client::IntoClientRequest,
-            http::HeaderValue,
+            Message as TungsteniteMessage, client::IntoClientRequest, http::HeaderValue,
         },
     };
     use tower::ServiceExt;
@@ -489,9 +487,7 @@ mod tests {
             .expect("bind test server");
         let address = listener.local_addr().expect("test server address");
         let task = tokio::spawn(async move {
-            axum::serve(listener, app)
-                .await
-                .expect("serve test router");
+            axum::serve(listener, app).await.expect("serve test router");
         });
         (address, task)
     }
@@ -500,9 +496,7 @@ mod tests {
         address: SocketAddr,
         capability: &str,
     ) -> WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>> {
-        let url = format!(
-            "ws://{address}/_codex-unified/{capability}/v1/responses"
-        );
+        let url = format!("ws://{address}/_codex-unified/{capability}/v1/responses");
         let mut request = url.into_client_request().expect("WebSocket request");
         request.headers_mut().insert(
             "openai-beta",
@@ -644,9 +638,7 @@ mod tests {
     async fn websocket_requires_beta_before_upgrade() {
         let provider: Arc<dyn Provider> = Arc::new(ScriptedProvider { abrupt_eof: false });
         let (address, task) = spawn(test_app(Some(provider))).await;
-        let url = format!(
-            "ws://{address}/_codex-unified/{CAPABILITY}/v1/responses"
-        );
+        let url = format!("ws://{address}/_codex-unified/{CAPABILITY}/v1/responses");
 
         let error = connect_async(url)
             .await
