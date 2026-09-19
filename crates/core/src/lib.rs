@@ -27,10 +27,7 @@ pub trait Provider: Send + Sync {
 
     async fn capabilities(&self, model: &str) -> ProviderCapabilities;
 
-    async fn execute(
-        &self,
-        turn: TurnEnvelope,
-    ) -> Result<Vec<CanonicalEvent>, ProviderError>;
+    async fn execute(&self, turn: TurnEnvelope) -> Result<Vec<CanonicalEvent>, ProviderError>;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
