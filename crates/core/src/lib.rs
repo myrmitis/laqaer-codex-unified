@@ -71,20 +71,14 @@ pub fn validated_event_stream(source: ProviderEventStream) -> ProviderEventStrea
             source,
             response_id: None,
             terminal_seen: false,
-            finished: false,
         },
         |mut state| async move {
-            if state.finished {
+            if state.terminal_seen {
                 return None;
             }
 
             match state.source.next().await {
                 Some(Ok(event)) => {
-                    if state.terminal_seen {
-                        state.finished = true;
-                        return None;
-                    }
-
                     if let Some(response_id) = event.response_id() {
                         state.response_id = Some(response_id.to_owned());
                     }
@@ -95,15 +89,11 @@ pub fn validated_event_stream(source: ProviderEventStream) -> ProviderEventStrea
                     Some((Ok(event), state))
                 }
                 Some(Err(error)) => {
-                    state.finished = true;
+                    state.terminal_seen = true;
                     Some((Ok(error.failure_event(state.response_id.clone())), state))
                 }
-                None if state.terminal_seen => {
-                    state.finished = true;
-                    None
-                }
                 None => {
-                    state.finished = true;
+                    state.terminal_seen = true;
                     Some((
                         Ok(CanonicalEvent::ResponseFailed {
                             response_id: state.response_id.clone(),
@@ -124,7 +114,6 @@ struct ValidatorState {
     source: ProviderEventStream,
     response_id: Option<String>,
     terminal_seen: bool,
-    finished: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
