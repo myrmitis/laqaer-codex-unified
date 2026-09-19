@@ -133,7 +133,7 @@ pub enum FailureCode {
     Cancelled,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum CanonicalEvent {
     ResponseCreated {
@@ -169,6 +169,21 @@ pub enum CanonicalEvent {
         response_id: Option<String>,
         reason: String,
     },
+}
+
+impl CanonicalEvent {
+    pub fn is_terminal(&self) -> bool {
+        matches!(
+            self,
+            Self::ResponseCompleted { .. }
+                | Self::ResponseFailed { .. }
+                | Self::ResponseIncomplete { .. }
+        )
+    }
+
+    pub fn is_success_terminal(&self) -> bool {
+        matches!(self, Self::ResponseCompleted { .. })
+    }
 }
 
 #[cfg(test)]
