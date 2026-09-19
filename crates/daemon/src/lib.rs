@@ -459,7 +459,13 @@ mod tests {
     use codex_unified_core::{Provider, ProviderCapabilities, ProviderError, ProviderEventStream};
     use codex_unified_protocol::{CanonicalEvent, TurnEnvelope};
     use futures_util::{SinkExt, StreamExt, stream};
-    use std::{net::SocketAddr, sync::Arc};
+    use std::{
+        net::SocketAddr,
+        sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        },
+    };
     use tokio::task::JoinHandle;
     use tokio_tungstenite::{
         MaybeTlsStream, WebSocketStream, connect_async,
@@ -483,6 +489,10 @@ mod tests {
 
     struct ScriptedProvider {
         abrupt_eof: bool,
+    }
+
+    struct PendingProvider {
+        calls: Arc<AtomicUsize>,
     }
 
     #[async_trait]
@@ -518,6 +528,31 @@ mod tests {
         }
     }
 
+    #[async_trait]
+    impl Provider for PendingProvider {
+        fn id(&self) -> &'static str {
+            "pending"
+        }
+
+        async fn capabilities(&self, _model: &str) -> ProviderCapabilities {
+            ProviderCapabilities {
+                streaming: true,
+                tools: false,
+                images: false,
+                continuation: false,
+            }
+        }
+
+        async fn execute(&self, turn: TurnEnvelope) -> Result<ProviderEventStream, ProviderError> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            let created = stream::iter(vec![Ok(CanonicalEvent::ResponseCreated {
+                response_id: format!("resp-{}", turn.identity.turn_id),
+            })]);
+            let pending = stream::pending::<Result<CanonicalEvent, ProviderError>>();
+            Ok(Box::pin(created.chain(pending)))
+        }
+    }
+
     fn test_app(provider: Option<Arc<dyn Provider>>) -> Router {
         app(AppConfig {
             capability: CAPABILITY.to_owned(),
@@ -543,21 +578,26 @@ mod tests {
         })
     }
 
-    async fn post_json(
-        app: Router,
-        path_capability: &str,
-        payload: Value,
-    ) -> (StatusCode, String, String) {
-        let request = Request::builder()
+    fn post_request(path_capability: &str, payload: Value) -> Request<Body> {
+        Request::builder()
             .method("POST")
             .uri(format!("/_codex-unified/{path_capability}/v1/responses"))
             .header(header::CONTENT_TYPE, "application/json")
             .body(Body::from(
                 serde_json::to_vec(&payload).expect("serialize fixture"),
             ))
-            .expect("request fixture");
+            .expect("request fixture")
+    }
 
-        let response = app.oneshot(request).await.expect("router response");
+    async fn post_json(
+        app: Router,
+        path_capability: &str,
+        payload: Value,
+    ) -> (StatusCode, String, String) {
+        let response = app
+            .oneshot(post_request(path_capability, payload))
+            .await
+            .expect("router response");
         let status = response.status();
         let content_type = response
             .headers()
@@ -674,6 +714,50 @@ mod tests {
         assert!(body.contains("event: response.failed"));
         assert!(body.contains("invalid_provider_response"));
         assert!(!body.contains("event: response.completed"));
+    }
+
+    #[tokio::test]
+    async fn concurrent_duplicate_turn_never_executes_provider_twice() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let provider: Arc<dyn Provider> = Arc::new(PendingProvider {
+            calls: Arc::clone(&calls),
+        });
+        let app = test_app(Some(provider));
+
+        let first = app
+            .clone()
+            .oneshot(post_request(CAPABILITY, payload()))
+            .await
+            .expect("first response");
+        assert_eq!(first.status(), StatusCode::OK);
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+
+        let second = app
+            .clone()
+            .oneshot(post_request(CAPABILITY, payload()))
+            .await
+            .expect("duplicate response");
+        assert_eq!(second.status(), StatusCode::CONFLICT);
+        let second_body = to_bytes(second.into_body(), 1024 * 1024)
+            .await
+            .expect("read duplicate response");
+        let second_json: Value =
+            serde_json::from_slice(&second_body).expect("duplicate JSON response");
+        assert_eq!(
+            second_json["error"]["code"],
+            "duplicate_turn_in_progress"
+        );
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+
+        drop(first);
+
+        let third = app
+            .oneshot(post_request(CAPABILITY, payload()))
+            .await
+            .expect("post-cancel response");
+        assert_eq!(third.status(), StatusCode::OK);
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
+        drop(third);
     }
 
     #[tokio::test]
