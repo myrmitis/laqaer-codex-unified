@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.codex-unified/browser-rpc.schema.json",
+  "title": "Codex Unified browser turn request",
+  "type": "object",
+  "required": ["protocol", "traceId", "identity", "mode", "prompt"],
+  "properties": {
+    "protocol": { "const": 1 },
+    "traceId": { "type": "string", "minLength": 1 },
+    "identity": {
+      "type": "object",
+      "required": ["turnId"],
+      "properties": {
+        "threadId": { "type": "string" },
+        "turnId": { "type": "string", "minLength": 1 },
+        "requestKind": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "mode": {
+      "enum": ["instant", "medium", "high", "extra_high", "pro"]
+    },
+    "prompt": { "type": "string" },
+    "previousResponseId": { "type": "string" }
+  },
+  "additionalProperties": false
+}
