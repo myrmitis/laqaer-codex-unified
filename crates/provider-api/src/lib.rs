@@ -707,10 +707,10 @@ mod tests {
             Arc::new(FixedCredential("secret-test-key")),
         );
 
-        let error = provider
-            .execute(envelope("openrouter/meta/llama"))
-            .await
-            .expect_err("401 must fail");
+        let error = match provider.execute(envelope("openrouter/meta/llama")).await {
+            Ok(_) => panic!("401 must fail"),
+            Err(error) => error,
+        };
 
         assert!(matches!(
             error,
