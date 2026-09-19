@@ -1,7 +1,5 @@
 use async_trait::async_trait;
-use codex_unified_core::{
-    Provider, ProviderCapabilities, ProviderError, ProviderEventStream,
-};
+use codex_unified_core::{Provider, ProviderCapabilities, ProviderError, ProviderEventStream};
 use codex_unified_protocol::{CanonicalEvent, TurnEnvelope};
 use futures_util::stream;
 
