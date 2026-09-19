@@ -380,7 +380,9 @@ fn parse_wire_event(value: &Value) -> Result<Option<CanonicalEvent>, ProviderErr
             delta: required_string(value, "delta")?,
         },
         "response.output_item.done" => {
-            let item = value.get("item").ok_or_else(|| invalid_wire("missing output item"))?;
+            let item = value
+                .get("item")
+                .ok_or_else(|| invalid_wire("missing output item"))?;
             if item.get("type").and_then(Value::as_str) == Some("function_call") {
                 let raw_arguments = item.get("arguments").cloned().unwrap_or(Value::Null);
                 let arguments = match raw_arguments {
