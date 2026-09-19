@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value};
+use serde_json::{Map, Value, json};
 use thiserror::Error;
 use uuid::Uuid;
 
@@ -133,6 +133,24 @@ pub enum FailureCode {
     Cancelled,
 }
 
+impl FailureCode {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::AuthRequired => "auth_required",
+            Self::RateLimited => "rate_limited",
+            Self::QuotaExhausted => "quota_exhausted",
+            Self::SecurityChallenge => "security_challenge",
+            Self::ModelUnavailable => "model_unavailable",
+            Self::DomContractChanged => "dom_contract_changed",
+            Self::ProviderTimeout => "provider_timeout",
+            Self::TransportFailed => "transport_failed",
+            Self::ContinuationMissing => "continuation_missing",
+            Self::InvalidProviderResponse => "invalid_provider_response",
+            Self::Cancelled => "cancelled",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum CanonicalEvent {
@@ -169,6 +187,127 @@ pub enum CanonicalEvent {
         response_id: Option<String>,
         reason: String,
     },
+}
+
+impl CanonicalEvent {
+    pub fn is_terminal(&self) -> bool {
+        matches!(
+            self,
+            Self::ResponseCompleted { .. }
+                | Self::ResponseFailed { .. }
+                | Self::ResponseIncomplete { .. }
+        )
+    }
+
+    pub fn response_id(&self) -> Option<&str> {
+        match self {
+            Self::ResponseCreated { response_id } | Self::ResponseCompleted { response_id } => {
+                Some(response_id)
+            }
+            Self::ResponseFailed { response_id, .. }
+            | Self::ResponseIncomplete { response_id, .. } => response_id.as_deref(),
+            _ => None,
+        }
+    }
+
+    pub fn responses_event_name(&self) -> &'static str {
+        match self {
+            Self::ResponseCreated { .. } => "response.created",
+            Self::OutputItemAdded { .. } => "response.output_item.added",
+            Self::TextDelta { .. } => "response.output_text.delta",
+            Self::FunctionCall { .. } => "response.output_item.done",
+            Self::OutputItemDone { .. } => "response.output_item.done",
+            Self::ResponseCompleted { .. } => "response.completed",
+            Self::ResponseFailed { .. } => "response.failed",
+            Self::ResponseIncomplete { .. } => "response.incomplete",
+        }
+    }
+
+    pub fn to_responses_wire(&self) -> Value {
+        match self {
+            Self::ResponseCreated { response_id } => json!({
+                "type": "response.created",
+                "response": {
+                    "id": response_id,
+                    "object": "response",
+                    "status": "in_progress"
+                }
+            }),
+            Self::OutputItemAdded { item_id, item_type } => json!({
+                "type": "response.output_item.added",
+                "item": {
+                    "id": item_id,
+                    "type": item_type
+                }
+            }),
+            Self::TextDelta { item_id, delta } => json!({
+                "type": "response.output_text.delta",
+                "item_id": item_id,
+                "delta": delta
+            }),
+            Self::FunctionCall {
+                item_id,
+                call_id,
+                name,
+                arguments,
+            } => json!({
+                "type": "response.output_item.done",
+                "item": {
+                    "id": item_id,
+                    "type": "function_call",
+                    "call_id": call_id,
+                    "name": name,
+                    "arguments": arguments
+                }
+            }),
+            Self::OutputItemDone { item_id } => json!({
+                "type": "response.output_item.done",
+                "item": {
+                    "id": item_id
+                }
+            }),
+            Self::ResponseCompleted { response_id } => json!({
+                "type": "response.completed",
+                "response": {
+                    "id": response_id,
+                    "object": "response",
+                    "status": "completed"
+                }
+            }),
+            Self::ResponseFailed {
+                response_id,
+                code,
+                message,
+                retryable,
+            } => json!({
+                "type": "response.failed",
+                "response": {
+                    "id": response_id,
+                    "object": "response",
+                    "status": "failed",
+                    "error": {
+                        "code": code.as_str(),
+                        "message": message,
+                        "retryable": retryable
+                    }
+                }
+            }),
+            Self::ResponseIncomplete {
+                response_id,
+                reason,
+            } => json!({
+                "type": "response.incomplete",
+                "response": {
+                    "id": response_id,
+                    "object": "response",
+                    "status": "incomplete",
+                    "incomplete_details": {
+                        "reason": reason
+                    }
+                }
+            }),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -242,6 +381,19 @@ mod tests {
         assert_eq!(
             result.expect_err("must reject"),
             TurnEnvelopeError::MissingTurnMetadata
+        );
+    }
+
+    #[test]
+    fn wire_terminal_names_are_explicit() {
+        let completed = CanonicalEvent::ResponseCompleted {
+            response_id: "resp-1".into(),
+        };
+        assert!(completed.is_terminal());
+        assert_eq!(completed.responses_event_name(), "response.completed");
+        assert_eq!(
+            completed.to_responses_wire()["response"]["status"],
+            "completed"
         );
     }
 }

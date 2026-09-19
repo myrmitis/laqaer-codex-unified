@@ -1,6 +1,9 @@
 use async_trait::async_trait;
-use codex_unified_core::{Provider, ProviderCapabilities, ProviderError};
+use codex_unified_core::{
+    Provider, ProviderCapabilities, ProviderError, ProviderEventStream,
+};
 use codex_unified_protocol::{CanonicalEvent, TurnEnvelope};
+use futures_util::stream;
 
 /// Scaffold for ordinary API-backed providers.
 ///
@@ -24,13 +27,13 @@ impl Provider for ApiProvider {
         }
     }
 
-    async fn execute(&self, turn: TurnEnvelope) -> Result<Vec<CanonicalEvent>, ProviderError> {
+    async fn execute(&self, turn: TurnEnvelope) -> Result<ProviderEventStream, ProviderError> {
         let response_id = format!("api-stub-{}", turn.identity.turn_id);
-        Ok(vec![
-            CanonicalEvent::ResponseCreated {
+        Ok(Box::pin(stream::iter(vec![
+            Ok(CanonicalEvent::ResponseCreated {
                 response_id: response_id.clone(),
-            },
-            CanonicalEvent::ResponseCompleted { response_id },
-        ])
+            }),
+            Ok(CanonicalEvent::ResponseCompleted { response_id }),
+        ])))
     }
 }
