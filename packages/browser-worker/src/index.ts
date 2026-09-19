@@ -7,19 +7,19 @@ export function sessionState() {
   return session.state;
 }
 
+export function browserSession(): BrowserSession {
+  return session;
+}
+
 export async function executeBrowserTurn(
   request: BrowserTurnRequest,
 ): Promise<BrowserTurnResult> {
-  if (!session.canStartTurn()) {
-    return {
-      ok: false,
-      code: "web_auth_required",
-      message: "ChatGPT browser session must be healthy before a turn starts",
-      retryable: false,
-    };
-  }
+  const preflight = session.preflightFailure();
+  if (preflight) return preflight;
 
-  // Electron/Playwright execution lands in Phase 2.
+  // Electron/Playwright execution lands in the next Phase 2 slice. This
+  // placeholder is intentionally terminal and non-retryable rather than
+  // pretending the browser model ran.
   return {
     ok: false,
     code: "web_transport_failed",
