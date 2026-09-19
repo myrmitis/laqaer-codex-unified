@@ -1,8 +1,8 @@
 use codex_unified_core::Provider;
+use codex_unified_protocol::TurnEnvelope;
 use codex_unified_provider_api::{
     ApiProtocol, ApiProvider, ApiRoute, ApiRouteTable, RouteResolution,
 };
-use codex_unified_protocol::TurnEnvelope;
 use codex_unifiedd::render_responses_sse;
 use serde_json::json;
 
@@ -48,9 +48,8 @@ async fn exercise_route(model: &str, expected_provider: &str, expected_upstream:
         route("xai", "grok-oauth/", ApiProtocol::OpenAiResponses),
     ]);
 
-    let envelope =
-        TurnEnvelope::from_responses_request(codex_request(model, "turn-e2e"))
-            .expect("parse Codex request");
+    let envelope = TurnEnvelope::from_responses_request(codex_request(model, "turn-e2e"))
+        .expect("parse Codex request");
 
     assert_eq!(envelope.identity.turn_id, "turn-e2e");
     assert_eq!(envelope.identity.thread_id.as_deref(), Some("thread-e2e"));
@@ -69,7 +68,10 @@ async fn exercise_route(model: &str, expected_provider: &str, expected_upstream:
     let provider = ApiProvider {
         route: route.clone(),
     };
-    let events = provider.execute(envelope).await.expect("provider execution");
+    let events = provider
+        .execute(envelope)
+        .await
+        .expect("provider execution");
     let sse = render_responses_sse(&events).expect("render canonical SSE");
 
     assert!(sse.contains("event: response.created"));
@@ -79,12 +81,7 @@ async fn exercise_route(model: &str, expected_provider: &str, expected_upstream:
 
 #[tokio::test]
 async fn codex_to_openrouter_to_completed_sse() {
-    exercise_route(
-        "openrouter/meta/llama",
-        "openrouter",
-        "meta/llama",
-    )
-    .await;
+    exercise_route("openrouter/meta/llama", "openrouter", "meta/llama").await;
 }
 
 #[tokio::test]
