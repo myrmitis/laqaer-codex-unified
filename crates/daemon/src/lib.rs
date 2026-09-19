@@ -368,12 +368,7 @@ fn hold_turn_lease(
 ) -> codex_unified_core::ProviderEventStream {
     Box::pin(futures_util::stream::unfold(
         (source, Some(lease)),
-        |(mut source, lease)| async move {
-            source
-                .next()
-                .await
-                .map(|item| (item, (source, lease)))
-        },
+        |(mut source, lease)| async move { source.next().await.map(|item| (item, (source, lease))) },
     ))
 }
 
@@ -743,10 +738,7 @@ mod tests {
             .expect("read duplicate response");
         let second_json: Value =
             serde_json::from_slice(&second_body).expect("duplicate JSON response");
-        assert_eq!(
-            second_json["error"]["code"],
-            "duplicate_turn_in_progress"
-        );
+        assert_eq!(second_json["error"]["code"], "duplicate_turn_in_progress");
         assert_eq!(calls.load(Ordering::SeqCst), 1);
 
         drop(first);
