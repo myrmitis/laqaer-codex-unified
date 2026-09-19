@@ -26,10 +26,7 @@ pub fn app(config: AppConfig) -> Router {
 
     Router::new()
         .route("/healthz", get(health))
-        .route(
-            "/_codex-unified/{capability}/v1/responses",
-            post(responses),
-        )
+        .route("/_codex-unified/{capability}/v1/responses", post(responses))
         .with_state(state)
 }
 
@@ -127,9 +124,7 @@ mod tests {
     async fn post(path_capability: &str, payload: Value) -> (StatusCode, Value) {
         let request = Request::builder()
             .method("POST")
-            .uri(format!(
-                "/_codex-unified/{path_capability}/v1/responses"
-            ))
+            .uri(format!("/_codex-unified/{path_capability}/v1/responses"))
             .header(header::CONTENT_TYPE, "application/json")
             .body(Body::from(
                 serde_json::to_vec(&payload).expect("serialize fixture"),
@@ -169,10 +164,7 @@ mod tests {
         .await;
 
         assert_eq!(status, StatusCode::BAD_REQUEST);
-        assert_eq!(
-            body["error"]["code"],
-            "native_turn_metadata_required"
-        );
+        assert_eq!(body["error"]["code"], "native_turn_metadata_required");
     }
 
     #[tokio::test]
