@@ -96,10 +96,7 @@ pub fn validated_event_stream(source: ProviderEventStream) -> ProviderEventStrea
                 }
                 Some(Err(error)) => {
                     state.finished = true;
-                    Some((
-                        Ok(error.failure_event(state.response_id.clone())),
-                        state,
-                    ))
+                    Some((Ok(error.failure_event(state.response_id.clone())), state))
                 }
                 None if state.terminal_seen => {
                     state.finished = true;
@@ -159,11 +156,10 @@ mod tests {
 
     #[tokio::test]
     async fn abrupt_provider_eof_becomes_failure_not_completion() {
-        let source: ProviderEventStream = Box::pin(stream::iter(vec![Ok(
-            CanonicalEvent::ResponseCreated {
+        let source: ProviderEventStream =
+            Box::pin(stream::iter(vec![Ok(CanonicalEvent::ResponseCreated {
                 response_id: "resp-eof".into(),
-            },
-        )]));
+            })]));
 
         let events: Vec<_> = validated_event_stream(source)
             .map(|item| item.expect("validator output"))
