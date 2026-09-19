@@ -68,7 +68,7 @@ impl ResponsesHttpRoute {
         upstream_model: impl Into<String>,
         credential: Arc<dyn CredentialSource>,
     ) -> Self {
-        Self::openrouter_at(
+        Self::openrouter_with_endpoint(
             public_model,
             upstream_model,
             Url::parse(OPENROUTER_RESPONSES_URL).expect("static OpenRouter URL"),
@@ -81,7 +81,7 @@ impl ResponsesHttpRoute {
         upstream_model: impl Into<String>,
         credential: Arc<dyn CredentialSource>,
     ) -> Self {
-        Self::xai_api_at(
+        Self::xai_api_with_endpoint(
             public_model,
             upstream_model,
             Url::parse(XAI_RESPONSES_URL).expect("static xAI URL"),
@@ -93,7 +93,7 @@ impl ResponsesHttpRoute {
         &self.public_model
     }
 
-    fn openrouter_at(
+    pub fn openrouter_with_endpoint(
         public_model: impl Into<String>,
         upstream_model: impl Into<String>,
         endpoint: Url,
@@ -116,7 +116,7 @@ impl ResponsesHttpRoute {
         }
     }
 
-    fn xai_api_at(
+    pub fn xai_api_with_endpoint(
         public_model: impl Into<String>,
         upstream_model: impl Into<String>,
         endpoint: Url,
@@ -787,7 +787,7 @@ mod tests {
     #[tokio::test]
     async fn openrouter_preserves_continuation_and_strips_codex_metadata() {
         let (endpoint, capture, task) = mock_upstream().await;
-        let route = ResponsesHttpRoute::openrouter_at(
+        let route = ResponsesHttpRoute::openrouter_with_endpoint(
             "openrouter/grok-4.6",
             "x-ai/grok-4.6",
             endpoint,
@@ -823,7 +823,7 @@ mod tests {
     #[tokio::test]
     async fn openrouter_meta_route_breaks_only_cycle_closing_ref() {
         let (endpoint, capture, task) = mock_upstream().await;
-        let route = ResponsesHttpRoute::openrouter_at(
+        let route = ResponsesHttpRoute::openrouter_with_endpoint(
             "openrouter/muse-spark-1.2",
             "meta/muse-spark-1.2",
             endpoint,
@@ -855,7 +855,7 @@ mod tests {
     #[tokio::test]
     async fn xai_api_keeps_native_responses_continuation_without_meta_rewrite() {
         let (endpoint, capture, task) = mock_upstream().await;
-        let route = ResponsesHttpRoute::xai_api_at(
+        let route = ResponsesHttpRoute::xai_api_with_endpoint(
             "grok-api/grok-4.6",
             "grok-4.6",
             endpoint,
@@ -883,7 +883,7 @@ mod tests {
     async fn upstream_rate_limit_is_classified_retryable() {
         let (endpoint, capture, task) = mock_upstream().await;
         *capture.status.lock().expect("status lock") = AxumStatusCode::TOO_MANY_REQUESTS;
-        let route = ResponsesHttpRoute::xai_api_at(
+        let route = ResponsesHttpRoute::xai_api_with_endpoint(
             "grok-api/grok-4.6",
             "grok-4.6",
             endpoint,
