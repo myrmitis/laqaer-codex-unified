@@ -34,11 +34,13 @@ impl CredentialSource for EnvironmentCredential {
         let token = std::env::var(self.variable)
             .ok()
             .filter(|value| !value.trim().is_empty())
-            .ok_or_else(|| classified(
-                FailureCode::AuthRequired,
-                format!("{} is not configured", self.variable),
-                false,
-            ))?;
+            .ok_or_else(|| {
+                classified(
+                    FailureCode::AuthRequired,
+                    format!("{} is not configured", self.variable),
+                    false,
+                )
+            })?;
         Ok(Zeroizing::new(token))
     }
 }
@@ -150,15 +152,13 @@ impl ResponsesHttpProvider {
     }
 
     fn request_payload(&self, turn: &TurnEnvelope) -> Result<Value, ProviderError> {
-        let mut payload = turn
-            .raw_request
-            .as_object()
-            .cloned()
-            .ok_or_else(|| classified(
+        let mut payload = turn.raw_request.as_object().cloned().ok_or_else(|| {
+            classified(
                 FailureCode::InvalidProviderResponse,
                 "Codex request body is not a JSON object",
                 false,
-            ))?;
+            )
+        })?;
 
         payload.insert(
             "model".into(),
@@ -208,11 +208,13 @@ impl Provider for ResponsesHttpProvider {
             .json(&payload)
             .send()
             .await
-            .map_err(|_| classified(
-                FailureCode::TransportFailed,
-                format!("{} request transport failed", self.route.provider_id),
-                true,
-            ))?;
+            .map_err(|_| {
+                classified(
+                    FailureCode::TransportFailed,
+                    format!("{} request transport failed", self.route.provider_id),
+                    true,
+                )
+            })?;
 
         if !response.status().is_success() {
             return Err(classify_http_status(
@@ -281,11 +283,7 @@ impl Provider for ResponsesHttpProvider {
     }
 }
 
-fn classified(
-    code: FailureCode,
-    message: impl Into<String>,
-    retryable: bool,
-) -> ProviderError {
+fn classified(code: FailureCode, message: impl Into<String>, retryable: bool) -> ProviderError {
     ProviderError::Classified {
         code,
         message: message.into(),
@@ -319,9 +317,7 @@ fn take_sse_block(buffer: &mut Vec<u8>) -> Option<Vec<u8>> {
         if buffer[index] == b'\n' && buffer[index + 1] == b'\n' {
             return Some(buffer.drain(..index + 2).collect());
         }
-        if index + 3 < buffer.len()
-            && buffer[index..index + 4] == *b"\r\n\r\n"
-        {
+        if index + 3 < buffer.len() && buffer[index..index + 4] == *b"\r\n\r\n" {
             return Some(buffer.drain(..index + 4).collect());
         }
         index += 1;
@@ -330,11 +326,13 @@ fn take_sse_block(buffer: &mut Vec<u8>) -> Option<Vec<u8>> {
 }
 
 fn decode_sse_block(block: &[u8]) -> Result<Option<CanonicalEvent>, ProviderError> {
-    let text = std::str::from_utf8(block).map_err(|_| classified(
-        FailureCode::InvalidProviderResponse,
-        "provider returned non-UTF-8 SSE",
-        false,
-    ))?;
+    let text = std::str::from_utf8(block).map_err(|_| {
+        classified(
+            FailureCode::InvalidProviderResponse,
+            "provider returned non-UTF-8 SSE",
+            false,
+        )
+    })?;
 
     let data = text
         .lines()
@@ -346,17 +344,22 @@ fn decode_sse_block(block: &[u8]) -> Result<Option<CanonicalEvent>, ProviderErro
         return Ok(None);
     }
 
-    let value = serde_json::from_str::<Value>(&data).map_err(|_| classified(
-        FailureCode::InvalidProviderResponse,
-        "provider returned malformed Responses SSE JSON",
-        false,
-    ))?;
+    let value = serde_json::from_str::<Value>(&data).map_err(|_| {
+        classified(
+            FailureCode::InvalidProviderResponse,
+            "provider returned malformed Responses SSE JSON",
+            false,
+        )
+    })?;
 
     parse_wire_event(&value)
 }
 
 fn parse_wire_event(value: &Value) -> Result<Option<CanonicalEvent>, ProviderError> {
-    let event_type = value.get("type").and_then(Value::as_str).unwrap_or_default();
+    let event_type = value
+        .get("type")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
     let response = value.get("response");
 
     let event = match event_type {
@@ -364,7 +367,9 @@ fn parse_wire_event(value: &Value) -> Result<Option<CanonicalEvent>, ProviderErr
             response_id: required_response_id(response)?,
         },
         "response.output_item.added" => {
-            let item = value.get("item").ok_or_else(|| invalid_wire("missing output item"))?;
+            let item = value
+                .get("item")
+                .ok_or_else(|| invalid_wire("missing output item"))?;
             CanonicalEvent::OutputItemAdded {
                 item_id: required_string(item, "id")?,
                 item_type: required_string(item, "type")?,
@@ -379,7 +384,9 @@ fn parse_wire_event(value: &Value) -> Result<Option<CanonicalEvent>, ProviderErr
             if item.get("type").and_then(Value::as_str) == Some("function_call") {
                 let raw_arguments = item.get("arguments").cloned().unwrap_or(Value::Null);
                 let arguments = match raw_arguments {
-                    Value::String(text) => serde_json::from_str(&text).unwrap_or(Value::String(text)),
+                    Value::String(text) => {
+                        serde_json::from_str(&text).unwrap_or(Value::String(text))
+                    }
                     other => other,
                 };
                 CanonicalEvent::FunctionCall {
@@ -466,7 +473,11 @@ fn invalid_wire(message: impl Into<String>) -> ProviderError {
 }
 
 fn bounded_wire_message(message: &str) -> String {
-    message.chars().filter(|ch| *ch != '\r' && *ch != '\n').take(512).collect()
+    message
+        .chars()
+        .filter(|ch| *ch != '\r' && *ch != '\n')
+        .take(512)
+        .collect()
 }
 
 fn break_recursive_tool_schemas(payload: &mut Map<String, Value>) {
@@ -563,11 +574,21 @@ fn schema_edges(root: &Value, path: &str) -> Vec<(String, bool)> {
         }
     }
 
-    for keyword in ["$defs", "definitions", "properties", "patternProperties", "dependentSchemas"] {
+    for keyword in [
+        "$defs",
+        "definitions",
+        "properties",
+        "patternProperties",
+        "dependentSchemas",
+    ] {
         if let Some(children) = node.get(keyword).and_then(Value::as_object) {
             for name in children.keys() {
                 edges.push((
-                    format!("{path}/{}/{}", escape_pointer(keyword), escape_pointer(name)),
+                    format!(
+                        "{path}/{}/{}",
+                        escape_pointer(keyword),
+                        escape_pointer(name)
+                    ),
                     false,
                 ));
             }
@@ -672,7 +693,11 @@ mod tests {
 
         let status = *capture.status.lock().expect("status lock");
         if status != AxumStatusCode::OK {
-            return (status, [(header::CONTENT_TYPE, "application/json")], "{}".to_owned());
+            return (
+                status,
+                [(header::CONTENT_TYPE, "application/json")],
+                "{}".to_owned(),
+            );
         }
 
         let body = [
@@ -749,7 +774,10 @@ mod tests {
         }])
     }
 
-    async fn execute_and_collect(provider: &ResponsesHttpProvider, turn: TurnEnvelope) -> Vec<CanonicalEvent> {
+    async fn execute_and_collect(
+        provider: &ResponsesHttpProvider,
+        turn: TurnEnvelope,
+    ) -> Vec<CanonicalEvent> {
         let stream = provider.execute(turn).await.expect("execute provider");
         validated_event_stream(stream)
             .map(|item| item.expect("validated event"))
@@ -769,8 +797,12 @@ mod tests {
         assert_eq!(route.tool_schema_policy, ToolSchemaPolicy::Preserve);
         let provider = ResponsesHttpProvider::new(route);
 
-        let events = execute_and_collect(&provider, turn("openrouter/grok-4.6", recursive_tool())).await;
-        assert!(matches!(events.last(), Some(CanonicalEvent::ResponseCompleted { .. })));
+        let events =
+            execute_and_collect(&provider, turn("openrouter/grok-4.6", recursive_tool())).await;
+        assert!(matches!(
+            events.last(),
+            Some(CanonicalEvent::ResponseCompleted { .. })
+        ));
 
         let requests = capture.requests.lock().expect("capture lock");
         let (authorization, payload) = requests.last().expect("captured request");
@@ -804,7 +836,11 @@ mod tests {
         );
         let provider = ResponsesHttpProvider::new(route);
 
-        execute_and_collect(&provider, turn("openrouter/muse-spark-1.2", recursive_tool())).await;
+        execute_and_collect(
+            &provider,
+            turn("openrouter/muse-spark-1.2", recursive_tool()),
+        )
+        .await;
 
         let requests = capture.requests.lock().expect("capture lock");
         let payload = &requests.last().expect("captured request").1;
