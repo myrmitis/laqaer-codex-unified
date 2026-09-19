@@ -8,9 +8,7 @@ use axum::{
     },
     routing::{get, post},
 };
-use codex_unified_core::{
-    EmptyProviderResolver, ProviderResolver, validated_event_stream,
-};
+use codex_unified_core::{EmptyProviderResolver, ProviderResolver, validated_event_stream};
 use codex_unified_protocol::{TurnEnvelope, TurnEnvelopeError};
 use futures_util::StreamExt;
 use serde_json::{Value, json};
@@ -107,7 +105,10 @@ async fn responses(
 fn sse_response<S>(stream: S) -> Response
 where
     S: futures_core::Stream<
-            Item = Result<codex_unified_protocol::CanonicalEvent, codex_unified_core::ProviderError>,
+            Item = Result<
+                codex_unified_protocol::CanonicalEvent,
+                codex_unified_core::ProviderError,
+            >,
         > + Send
         + 'static,
 {
@@ -173,9 +174,7 @@ mod tests {
         body::{Body, to_bytes},
         http::{Request, header},
     };
-    use codex_unified_core::{
-        Provider, ProviderCapabilities, ProviderError, ProviderEventStream,
-    };
+    use codex_unified_core::{Provider, ProviderCapabilities, ProviderError, ProviderEventStream};
     use codex_unified_protocol::{CanonicalEvent, TurnEnvelope};
     use futures_util::stream;
     use std::sync::Arc;
@@ -212,10 +211,7 @@ mod tests {
             }
         }
 
-        async fn execute(
-            &self,
-            turn: TurnEnvelope,
-        ) -> Result<ProviderEventStream, ProviderError> {
+        async fn execute(&self, turn: TurnEnvelope) -> Result<ProviderEventStream, ProviderError> {
             let response_id = format!("resp-{}", turn.identity.turn_id);
             let mut events = vec![
                 Ok(CanonicalEvent::ResponseCreated {
@@ -326,9 +322,7 @@ mod tests {
 
     #[tokio::test]
     async fn streams_canonical_responses_sse() {
-        let provider: Arc<dyn Provider> = Arc::new(ScriptedProvider {
-            abrupt_eof: false,
-        });
+        let provider: Arc<dyn Provider> = Arc::new(ScriptedProvider { abrupt_eof: false });
         let (status, content_type, body) =
             post_json(test_app(Some(provider)), CAPABILITY, payload()).await;
 
@@ -342,11 +336,8 @@ mod tests {
 
     #[tokio::test]
     async fn abrupt_provider_eof_streams_failure_and_never_completion() {
-        let provider: Arc<dyn Provider> = Arc::new(ScriptedProvider {
-            abrupt_eof: true,
-        });
-        let (status, _, body) =
-            post_json(test_app(Some(provider)), CAPABILITY, payload()).await;
+        let provider: Arc<dyn Provider> = Arc::new(ScriptedProvider { abrupt_eof: true });
+        let (status, _, body) = post_json(test_app(Some(provider)), CAPABILITY, payload()).await;
 
         assert_eq!(status, StatusCode::OK);
         assert!(body.contains("event: response.failed"));
