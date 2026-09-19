@@ -218,10 +218,7 @@ impl Provider for HttpApiProvider {
             }
         }
 
-        let credential = self
-            .credentials
-            .resolve(&self.route.credential_ref)
-            .await?;
+        let credential = self.credentials.resolve(&self.route.credential_ref).await?;
         let body = self.upstream_body(&turn)?;
 
         let response = self
@@ -320,11 +317,7 @@ fn default_capabilities() -> ProviderCapabilities {
     }
 }
 
-fn classified(
-    code: FailureCode,
-    message: impl Into<String>,
-    retryable: bool,
-) -> ProviderError {
+fn classified(code: FailureCode, message: impl Into<String>, retryable: bool) -> ProviderError {
     ProviderError::Classified {
         code,
         message: message.into(),
@@ -336,7 +329,10 @@ fn status_error(status: reqwest::StatusCode) -> ProviderError {
     match status.as_u16() {
         401 | 403 => classified(
             FailureCode::AuthRequired,
-            format!("provider authentication failed with HTTP {}", status.as_u16()),
+            format!(
+                "provider authentication failed with HTTP {}",
+                status.as_u16()
+            ),
             false,
         ),
         429 => classified(
@@ -370,16 +366,13 @@ fn decode_responses_event(data: &str) -> Result<Option<CanonicalEvent>, Provider
         )
     })?;
 
-    let event_type = value
-        .get("type")
-        .and_then(Value::as_str)
-        .ok_or_else(|| {
-            classified(
-                FailureCode::InvalidProviderResponse,
-                "provider SSE event is missing type",
-                false,
-            )
-        })?;
+    let event_type = value.get("type").and_then(Value::as_str).ok_or_else(|| {
+        classified(
+            FailureCode::InvalidProviderResponse,
+            "provider SSE event is missing type",
+            false,
+        )
+    })?;
 
     match event_type {
         "response.created" => {
@@ -389,10 +382,7 @@ fn decode_responses_event(data: &str) -> Result<Option<CanonicalEvent>, Provider
         "response.output_item.added" => {
             let item_id = required_string(&value, &["item", "id"])?;
             let item_type = required_string(&value, &["item", "type"])?;
-            Ok(Some(CanonicalEvent::OutputItemAdded {
-                item_id,
-                item_type,
-            }))
+            Ok(Some(CanonicalEvent::OutputItemAdded { item_id, item_type }))
         }
         "response.output_text.delta" => {
             let item_id = required_string(&value, &["item_id"])?;
@@ -440,11 +430,8 @@ fn decode_responses_event(data: &str) -> Result<Option<CanonicalEvent>, Provider
         }
         "response.incomplete" => {
             let response_id = optional_string_at(&value, &["response", "id"]);
-            let reason = optional_string_at(
-                &value,
-                &["response", "incomplete_details", "reason"],
-            )
-            .unwrap_or_else(|| "unknown".into());
+            let reason = optional_string_at(&value, &["response", "incomplete_details", "reason"])
+                .unwrap_or_else(|| "unknown".into());
             Ok(Some(CanonicalEvent::ResponseIncomplete {
                 response_id,
                 reason,
@@ -550,10 +537,7 @@ mod tests {
     fn ambiguous_prefixes_fail_closed() {
         let mut duplicate = openrouter("https://one.example/v1");
         duplicate.provider_id = "other".into();
-        let table = ApiRouteTable::new(vec![
-            openrouter("https://two.example/v1"),
-            duplicate,
-        ]);
+        let table = ApiRouteTable::new(vec![openrouter("https://two.example/v1"), duplicate]);
 
         assert_eq!(
             table.resolve("openrouter/model"),
@@ -618,7 +602,10 @@ mod tests {
             .into_response()
     }
 
-    async fn spawn_mock(status: StatusCode, sse: &str) -> (SocketAddr, Arc<Mutex<Option<Capture>>>, JoinHandle<()>) {
+    async fn spawn_mock(
+        status: StatusCode,
+        sse: &str,
+    ) -> (SocketAddr, Arc<Mutex<Option<Capture>>>, JoinHandle<()>) {
         let capture = Arc::new(Mutex::new(None));
         let state = MockState {
             capture: Arc::clone(&capture),
@@ -633,7 +620,9 @@ mod tests {
             .expect("bind mock provider");
         let address = listener.local_addr().expect("mock address");
         let task = tokio::spawn(async move {
-            axum::serve(listener, app).await.expect("serve mock provider");
+            axum::serve(listener, app)
+                .await
+                .expect("serve mock provider");
         });
         (address, capture, task)
     }
