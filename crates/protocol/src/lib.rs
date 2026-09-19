@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{Map, Value};
+use thiserror::Error;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -21,6 +22,96 @@ pub struct TurnEnvelope {
     pub input: Value,
     pub tools: Value,
     pub raw_request: Value,
+}
+
+#[derive(Debug, Error, PartialEq, Eq)]
+pub enum TurnEnvelopeError {
+    #[error("Responses request body must be a JSON object")]
+    InvalidRequestRoot,
+    #[error("Responses request is missing a model")]
+    MissingModel,
+    #[error("client_metadata must be a JSON object")]
+    InvalidClientMetadata,
+    #[error("native Codex turn metadata is required")]
+    MissingTurnMetadata,
+    #[error("native Codex turn metadata is not valid JSON")]
+    InvalidTurnMetadata,
+    #[error("native Codex turn metadata is missing turn_id")]
+    MissingTurnId,
+}
+
+impl TurnEnvelope {
+    pub fn from_responses_request(raw_request: Value) -> Result<Self, TurnEnvelopeError> {
+        let object = raw_request
+            .as_object()
+            .ok_or(TurnEnvelopeError::InvalidRequestRoot)?;
+
+        let requested_model = object
+            .get("model")
+            .and_then(Value::as_str)
+            .filter(|value| !value.is_empty())
+            .ok_or(TurnEnvelopeError::MissingModel)?
+            .to_owned();
+
+        let client_metadata = object
+            .get("client_metadata")
+            .cloned()
+            .unwrap_or_else(|| Value::Object(Map::new()));
+
+        let metadata_object = client_metadata
+            .as_object()
+            .ok_or(TurnEnvelopeError::InvalidClientMetadata)?;
+
+        let encoded_turn = metadata_object
+            .get("x-codex-turn-metadata")
+            .ok_or(TurnEnvelopeError::MissingTurnMetadata)?;
+
+        let turn_metadata = match encoded_turn {
+            Value::String(value) => serde_json::from_str::<Value>(value)
+                .map_err(|_| TurnEnvelopeError::InvalidTurnMetadata)?,
+            Value::Object(_) => encoded_turn.clone(),
+            _ => return Err(TurnEnvelopeError::InvalidTurnMetadata),
+        };
+
+        let turn_object = turn_metadata
+            .as_object()
+            .ok_or(TurnEnvelopeError::InvalidTurnMetadata)?;
+
+        let turn_id = optional_string(turn_object, "turn_id")
+            .filter(|value| !value.is_empty())
+            .ok_or(TurnEnvelopeError::MissingTurnId)?;
+
+        let parent_thread_id = optional_string(turn_object, "parent_thread_id").or_else(|| {
+            metadata_object
+                .get("x-codex-parent-thread-id")
+                .and_then(Value::as_str)
+                .map(ToOwned::to_owned)
+        });
+
+        Ok(Self {
+            trace_id: Uuid::new_v4(),
+            identity: TurnIdentity {
+                thread_id: optional_string(turn_object, "thread_id"),
+                turn_id,
+                parent_thread_id,
+                request_kind: optional_string(turn_object, "request_kind"),
+            },
+            requested_model,
+            client_metadata,
+            previous_response_id: optional_string(object, "previous_response_id"),
+            prompt_cache_key: optional_string(object, "prompt_cache_key"),
+            input: object.get("input").cloned().unwrap_or(Value::Null),
+            tools: object
+                .get("tools")
+                .cloned()
+                .unwrap_or_else(|| Value::Array(Vec::new())),
+            raw_request,
+        })
+    }
+}
+
+fn optional_string(object: &Map<String, Value>, key: &str) -> Option<String> {
+    object.get(key).and_then(Value::as_str).map(ToOwned::to_owned)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -81,28 +172,31 @@ pub enum CanonicalEvent {
 mod tests {
     use super::*;
 
+    fn request(turn_metadata: Value) -> Value {
+        serde_json::json!({
+            "model": "chatgpt-web/pro",
+            "client_metadata": {
+                "x-codex-turn-metadata": turn_metadata
+            },
+            "previous_response_id": "response-1",
+            "prompt_cache_key": "cache-1",
+            "input": [{"type": "message"}],
+            "tools": []
+        })
+    }
+
     #[test]
     fn canonical_identity_survives_provider_payload_mutation() {
-        let envelope = TurnEnvelope {
-            trace_id: Uuid::nil(),
-            identity: TurnIdentity {
-                thread_id: Some("thread-1".into()),
-                turn_id: "turn-1".into(),
-                parent_thread_id: None,
-                request_kind: Some("turn".into()),
-            },
-            requested_model: "chatgpt-web/pro".into(),
-            client_metadata: serde_json::json!({
-                "x-codex-turn-metadata": "{\"turn_id\":\"turn-1\"}"
-            }),
-            previous_response_id: None,
-            prompt_cache_key: None,
-            input: serde_json::json!([]),
-            tools: serde_json::json!([]),
-            raw_request: serde_json::json!({
-                "client_metadata": {"x": 1}
-            }),
-        };
+        let turn = serde_json::json!({
+            "thread_id": "thread-1",
+            "turn_id": "turn-1",
+            "request_kind": "turn"
+        });
+
+        let encoded = serde_json::to_string(&turn).expect("encode fixture");
+        let envelope =
+            TurnEnvelope::from_responses_request(request(Value::String(encoded)))
+                .expect("parse fixture");
 
         let mut provider_payload = envelope.raw_request.clone();
         provider_payload
@@ -111,11 +205,39 @@ mod tests {
             .remove("client_metadata");
 
         assert_eq!(envelope.identity.turn_id, "turn-1");
-        assert!(
-            envelope
-                .client_metadata
-                .get("x-codex-turn-metadata")
-                .is_some()
+        assert_eq!(envelope.identity.thread_id.as_deref(), Some("thread-1"));
+        assert!(envelope
+            .client_metadata
+            .get("x-codex-turn-metadata")
+            .is_some());
+    }
+
+    #[test]
+    fn accepts_structured_turn_metadata_without_losing_it() {
+        let turn = serde_json::json!({
+            "thread_id": "thread-2",
+            "turn_id": "turn-2",
+            "request_kind": "turn"
+        });
+
+        let envelope = TurnEnvelope::from_responses_request(request(turn))
+            .expect("parse structured metadata");
+
+        assert_eq!(envelope.identity.turn_id, "turn-2");
+        assert_eq!(
+            envelope.previous_response_id.as_deref(),
+            Some("response-1")
         );
+        assert_eq!(envelope.prompt_cache_key.as_deref(), Some("cache-1"));
+    }
+
+    #[test]
+    fn missing_native_identity_fails_closed() {
+        let result = TurnEnvelope::from_responses_request(serde_json::json!({
+            "model": "chatgpt-web/instant",
+            "input": []
+        }));
+
+        assert_eq!(result.expect_err("must reject"), TurnEnvelopeError::MissingTurnMetadata);
     }
 }

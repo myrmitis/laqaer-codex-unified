@@ -1,15 +1,6 @@
-use axum::{Json, Router, routing::get};
-use serde_json::{Value, json};
+use codex_unifiedd::{AppConfig, app};
 use std::net::SocketAddr;
 use tracing_subscriber::EnvFilter;
-
-async fn health() -> Json<Value> {
-    Json(json!({
-        "service": "codex-unifiedd",
-        "status": "ok",
-        "protocol": 1
-    }))
-}
 
 #[tokio::main]
 async fn main() {
@@ -21,7 +12,10 @@ async fn main() {
         )
         .init();
 
-    let app = Router::new().route("/healthz", get(health));
+    let capability = std::env::var("CODEX_UNIFIED_CAPABILITY")
+        .expect("CODEX_UNIFIED_CAPABILITY must be set by the service supervisor");
+
+    let app = app(AppConfig { capability });
     let address = SocketAddr::from(([127, 0, 0, 1], 4317));
     let listener = tokio::net::TcpListener::bind(address)
         .await
