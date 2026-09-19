@@ -12,10 +12,14 @@ use axum::{
     routing::{get, post},
 };
 use codex_unified_core::{EmptyProviderResolver, ProviderResolver, validated_event_stream};
-use codex_unified_protocol::{CanonicalEvent, TurnEnvelope, TurnEnvelopeError};
+use codex_unified_protocol::{CanonicalEvent, TurnEnvelope, TurnEnvelopeError, TurnIdentity};
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
-use std::{convert::Infallible, sync::Arc};
+use std::{
+    collections::HashSet,
+    convert::Infallible,
+    sync::{Arc, Mutex},
+};
 
 pub const RESPONSES_WEBSOCKET_BETA: &str = "responses_websockets=2026-02-06";
 
@@ -38,12 +42,58 @@ impl AppConfig {
 struct AppState {
     capability: Arc<str>,
     providers: Arc<dyn ProviderResolver>,
+    turn_leases: Arc<TurnLeaseRegistry>,
+}
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+struct TurnKey {
+    thread_id: Option<String>,
+    turn_id: String,
+}
+
+#[derive(Default)]
+struct TurnLeaseRegistry {
+    active: Mutex<HashSet<TurnKey>>,
+}
+
+impl TurnLeaseRegistry {
+    fn try_acquire(self: &Arc<Self>, identity: &TurnIdentity) -> Option<TurnLease> {
+        let key = TurnKey {
+            thread_id: identity.thread_id.clone(),
+            turn_id: identity.turn_id.clone(),
+        };
+        let mut active = self.active.lock().expect("turn lease registry poisoned");
+        if !active.insert(key.clone()) {
+            return None;
+        }
+        drop(active);
+        Some(TurnLease {
+            registry: Arc::clone(self),
+            key,
+        })
+    }
+}
+
+struct TurnLease {
+    registry: Arc<TurnLeaseRegistry>,
+    key: TurnKey,
+}
+
+impl Drop for TurnLease {
+    fn drop(&mut self) {
+        self.registry
+            .active
+            .lock()
+            .expect("turn lease registry poisoned")
+            .remove(&self.key);
+    }
 }
 
 pub fn app(config: AppConfig) -> Router {
     let state = AppState {
         capability: Arc::<str>::from(config.capability),
         providers: config.providers,
+        turn_leases: Arc::new(TurnLeaseRegistry::default()),
     };
 
     Router::new()
@@ -92,6 +142,17 @@ async fn responses(
         }
     };
 
+    let lease = match state.turn_leases.try_acquire(&turn.identity) {
+        Some(lease) => lease,
+        None => {
+            return error_response(
+                StatusCode::CONFLICT,
+                "duplicate_turn_in_progress",
+                "This Codex turn is already in progress.",
+            );
+        }
+    };
+
     tracing::info!(
         trace_id = %turn.trace_id,
         model = %turn.requested_model,
@@ -104,11 +165,17 @@ async fn responses(
         Ok(stream) => stream,
         Err(error) => {
             let event = error.failure_event(None);
-            return sse_response(futures_util::stream::iter(vec![Ok(event)]));
+            return sse_response(hold_turn_lease(
+                Box::pin(futures_util::stream::iter(vec![Ok(event)])),
+                lease,
+            ));
         }
     };
 
-    sse_response(validated_event_stream(provider_stream))
+    sse_response(hold_turn_lease(
+        validated_event_stream(provider_stream),
+        lease,
+    ))
 }
 
 async fn responses_websocket(
@@ -216,6 +283,18 @@ async fn process_websocket_request(
         }
     };
 
+    let _lease = match state.turn_leases.try_acquire(&turn.identity) {
+        Some(lease) => lease,
+        None => {
+            return send_ws_error(
+                socket,
+                "duplicate_turn_in_progress",
+                "This Codex turn is already in progress.",
+            )
+            .await;
+        }
+    };
+
     tracing::info!(
         trace_id = %turn.trace_id,
         model = %turn.requested_model,
@@ -281,6 +360,21 @@ fn has_websocket_beta(headers: &HeaderMap) -> bool {
 
 fn authorized_capability(capability: &str, state: &AppState) -> bool {
     constant_time_equal(capability.as_bytes(), state.capability.as_bytes())
+}
+
+fn hold_turn_lease(
+    source: codex_unified_core::ProviderEventStream,
+    lease: TurnLease,
+) -> codex_unified_core::ProviderEventStream {
+    Box::pin(futures_util::stream::unfold(
+        (source, Some(lease)),
+        |(mut source, lease)| async move {
+            source
+                .next()
+                .await
+                .map(|item| (item, (source, lease)))
+        },
+    ))
 }
 
 fn sse_response<S>(stream: S) -> Response
