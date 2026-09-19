@@ -1,6 +1,7 @@
 use async_trait::async_trait;
-use codex_unified_core::{Provider, ProviderCapabilities, ProviderError};
+use codex_unified_core::{Provider, ProviderCapabilities, ProviderError, ProviderEventStream};
 use codex_unified_protocol::{CanonicalEvent, FailureCode, TurnEnvelope};
+use futures_util::stream;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BrowserSessionState {
@@ -48,18 +49,18 @@ impl Provider for WebProvider {
         }
     }
 
-    async fn execute(&self, turn: TurnEnvelope) -> Result<Vec<CanonicalEvent>, ProviderError> {
+    async fn execute(&self, turn: TurnEnvelope) -> Result<ProviderEventStream, ProviderError> {
         self.preflight()?;
 
         // Browser RPC lands in Phase 2. The provider already enforces the
         // critical invariant: an unhealthy session never starts physical work.
         let response_id = format!("web-stub-{}", turn.identity.turn_id);
-        Ok(vec![
-            CanonicalEvent::ResponseCreated {
+        Ok(Box::pin(stream::iter(vec![
+            Ok(CanonicalEvent::ResponseCreated {
                 response_id: response_id.clone(),
-            },
-            CanonicalEvent::ResponseCompleted { response_id },
-        ])
+            }),
+            Ok(CanonicalEvent::ResponseCompleted { response_id }),
+        ])))
     }
 }
 
