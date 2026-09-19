@@ -13,3 +13,6 @@ tokio.workspace = true
 tower.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
+
+[dev-dependencies]
+codex-unified-provider-api = { path = "../provider-api" }
