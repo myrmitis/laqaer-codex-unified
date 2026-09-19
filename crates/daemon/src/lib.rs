@@ -1,7 +1,10 @@
 use axum::{
     Json, Router,
-    extract::{Path, State},
-    http::StatusCode,
+    extract::{
+        Path, State, WebSocketUpgrade,
+        ws::{Message, WebSocket},
+    },
+    http::{HeaderMap, StatusCode},
     response::{
         IntoResponse, Response,
         sse::{Event, KeepAlive, Sse},
@@ -9,10 +12,12 @@ use axum::{
     routing::{get, post},
 };
 use codex_unified_core::{EmptyProviderResolver, ProviderResolver, validated_event_stream};
-use codex_unified_protocol::{TurnEnvelope, TurnEnvelopeError};
-use futures_util::StreamExt;
+use codex_unified_protocol::{CanonicalEvent, TurnEnvelope, TurnEnvelopeError};
+use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
 use std::{convert::Infallible, sync::Arc};
+
+pub const RESPONSES_WEBSOCKET_BETA: &str = "responses_websockets=2026-02-06";
 
 #[derive(Clone)]
 pub struct AppConfig {
@@ -43,7 +48,10 @@ pub fn app(config: AppConfig) -> Router {
 
     Router::new()
         .route("/healthz", get(health))
-        .route("/_codex-unified/{capability}/v1/responses", post(responses))
+        .route(
+            "/_codex-unified/{capability}/v1/responses",
+            post(responses).get(responses_websocket),
+        )
         .with_state(state)
 }
 
@@ -60,7 +68,7 @@ async fn responses(
     State(state): State<AppState>,
     Json(payload): Json<Value>,
 ) -> Response {
-    if !constant_time_equal(capability.as_bytes(), state.capability.as_bytes()) {
+    if !authorized_capability(&capability, &state) {
         return error_response(
             StatusCode::UNAUTHORIZED,
             "local_auth_required",
@@ -88,6 +96,7 @@ async fn responses(
         trace_id = %turn.trace_id,
         model = %turn.requested_model,
         provider = provider.id(),
+        transport = "sse",
         "responses ingress accepted"
     );
 
@@ -100,6 +109,178 @@ async fn responses(
     };
 
     sse_response(validated_event_stream(provider_stream))
+}
+
+async fn responses_websocket(
+    Path(capability): Path<String>,
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    ws: WebSocketUpgrade,
+) -> Response {
+    if !authorized_capability(&capability, &state) {
+        return error_response(
+            StatusCode::UNAUTHORIZED,
+            "local_auth_required",
+            "The local Codex Unified capability is invalid.",
+        );
+    }
+
+    if !has_websocket_beta(&headers) {
+        return error_response(
+            StatusCode::UPGRADE_REQUIRED,
+            "websocket_beta_required",
+            "Responses WebSocket requires the responses_websockets=2026-02-06 beta.",
+        );
+    }
+
+    ws.on_upgrade(move |socket| websocket_loop(socket, state))
+        .into_response()
+}
+
+async fn websocket_loop(mut socket: WebSocket, state: AppState) {
+    while let Some(message) = socket.next().await {
+        match message {
+            Ok(Message::Text(text)) => {
+                let payload = match serde_json::from_str::<Value>(text.as_str()) {
+                    Ok(payload) => payload,
+                    Err(_) => {
+                        if !send_ws_error(
+                            &mut socket,
+                            "invalid_request",
+                            "WebSocket request frame must contain valid JSON.",
+                        )
+                        .await
+                        {
+                            break;
+                        }
+                        continue;
+                    }
+                };
+
+                if !process_websocket_request(&mut socket, &state, payload).await {
+                    break;
+                }
+            }
+            Ok(Message::Ping(payload)) => {
+                if socket.send(Message::Pong(payload)).await.is_err() {
+                    break;
+                }
+            }
+            Ok(Message::Close(_)) | Err(_) => break,
+            Ok(_) => {
+                if !send_ws_error(
+                    &mut socket,
+                    "unsupported_frame",
+                    "Responses WebSocket accepts JSON text request frames.",
+                )
+                .await
+                {
+                    break;
+                }
+            }
+        }
+    }
+}
+
+async fn process_websocket_request(
+    socket: &mut WebSocket,
+    state: &AppState,
+    payload: Value,
+) -> bool {
+    if payload.get("type").and_then(Value::as_str) != Some("response.create") {
+        return send_ws_error(
+            socket,
+            "invalid_request_type",
+            "Responses WebSocket request type must be response.create.",
+        )
+        .await;
+    }
+
+    let turn = match TurnEnvelope::from_responses_request(payload) {
+        Ok(turn) => turn,
+        Err(error) => {
+            let code = turn_error_code(&error);
+            return send_ws_error(socket, code, &error.to_string()).await;
+        }
+    };
+
+    let provider = match state.providers.resolve(&turn.requested_model) {
+        Some(provider) => provider,
+        None => {
+            return send_ws_error(
+                socket,
+                "model_not_routable",
+                "No enabled provider route owns the requested model.",
+            )
+            .await;
+        }
+    };
+
+    tracing::info!(
+        trace_id = %turn.trace_id,
+        model = %turn.requested_model,
+        provider = provider.id(),
+        transport = "websocket",
+        "responses ingress accepted"
+    );
+
+    let source = match provider.execute(turn).await {
+        Ok(stream) => stream,
+        Err(error) => {
+            return send_ws_canonical(socket, error.failure_event(None)).await;
+        }
+    };
+
+    let mut stream = validated_event_stream(source);
+    while let Some(result) = stream.next().await {
+        let event = match result {
+            Ok(event) => event,
+            Err(error) => error.failure_event(None),
+        };
+        if !send_ws_canonical(socket, event).await {
+            return false;
+        }
+    }
+
+    true
+}
+
+async fn send_ws_canonical(socket: &mut WebSocket, event: CanonicalEvent) -> bool {
+    let encoded = match serde_json::to_string(&event.to_responses_wire()) {
+        Ok(encoded) => encoded,
+        Err(_) => return false,
+    };
+    socket.send(Message::Text(encoded.into())).await.is_ok()
+}
+
+async fn send_ws_error(socket: &mut WebSocket, code: &str, message: &str) -> bool {
+    let encoded = json!({
+        "type": "error",
+        "error": {
+            "type": "invalid_request_error",
+            "code": code,
+            "message": message
+        }
+    })
+    .to_string();
+
+    socket.send(Message::Text(encoded.into())).await.is_ok()
+}
+
+fn has_websocket_beta(headers: &HeaderMap) -> bool {
+    headers
+        .get("openai-beta")
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| {
+            value
+                .split(',')
+                .map(str::trim)
+                .any(|token| token == RESPONSES_WEBSOCKET_BETA)
+        })
+}
+
+fn authorized_capability(capability: &str, state: &AppState) -> bool {
+    constant_time_equal(capability.as_bytes(), state.capability.as_bytes())
 }
 
 fn sse_response<S>(stream: S) -> Response
@@ -131,14 +312,21 @@ where
         .into_response()
 }
 
-fn turn_error_response(error: TurnEnvelopeError) -> Response {
-    let code = match &error {
+fn turn_error_code(error: &TurnEnvelopeError) -> &'static str {
+    match error {
         TurnEnvelopeError::MissingTurnMetadata | TurnEnvelopeError::MissingTurnId => {
             "native_turn_metadata_required"
         }
         _ => "invalid_request",
-    };
-    error_response(StatusCode::BAD_REQUEST, code, &error.to_string())
+    }
+}
+
+fn turn_error_response(error: TurnEnvelopeError) -> Response {
+    error_response(
+        StatusCode::BAD_REQUEST,
+        turn_error_code(&error),
+        &error.to_string(),
+    )
 }
 
 fn error_response(status: StatusCode, code: &str, message: &str) -> Response {
@@ -176,8 +364,17 @@ mod tests {
     };
     use codex_unified_core::{Provider, ProviderCapabilities, ProviderError, ProviderEventStream};
     use codex_unified_protocol::{CanonicalEvent, TurnEnvelope};
-    use futures_util::stream;
-    use std::sync::Arc;
+    use futures_util::{SinkExt, StreamExt, stream};
+    use std::{net::SocketAddr, sync::Arc};
+    use tokio::task::JoinHandle;
+    use tokio_tungstenite::{
+        MaybeTlsStream, WebSocketStream, connect_async,
+        tungstenite::{
+            Message as TungsteniteMessage,
+            client::IntoClientRequest,
+            http::HeaderValue,
+        },
+    };
     use tower::ServiceExt;
 
     const CAPABILITY: &str = "test-capability-0123456789";
@@ -243,6 +440,7 @@ mod tests {
             "request_kind": "turn"
         });
         serde_json::json!({
+            "type": "response.create",
             "model": "test/model",
             "client_metadata": {
                 "x-codex-turn-metadata": serde_json::to_string(&metadata)
@@ -283,6 +481,51 @@ mod tests {
             content_type,
             String::from_utf8(body.to_vec()).expect("UTF-8 body"),
         )
+    }
+
+    async fn spawn(app: Router) -> (SocketAddr, JoinHandle<()>) {
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .expect("bind test server");
+        let address = listener.local_addr().expect("test server address");
+        let task = tokio::spawn(async move {
+            axum::serve(listener, app)
+                .await
+                .expect("serve test router");
+        });
+        (address, task)
+    }
+
+    async fn connect_ws(
+        address: SocketAddr,
+        capability: &str,
+    ) -> WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>> {
+        let url = format!(
+            "ws://{address}/_codex-unified/{capability}/v1/responses"
+        );
+        let mut request = url.into_client_request().expect("WebSocket request");
+        request.headers_mut().insert(
+            "openai-beta",
+            HeaderValue::from_static(RESPONSES_WEBSOCKET_BETA),
+        );
+        let (socket, response) = connect_async(request).await.expect("connect websocket");
+        assert_eq!(response.status(), StatusCode::SWITCHING_PROTOCOLS);
+        socket
+    }
+
+    async fn next_ws_json(
+        socket: &mut WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>,
+    ) -> Value {
+        loop {
+            let message = socket
+                .next()
+                .await
+                .expect("WebSocket message")
+                .expect("WebSocket frame");
+            if let TungsteniteMessage::Text(text) = message {
+                return serde_json::from_str(text.as_str()).expect("JSON WebSocket frame");
+            }
+        }
     }
 
     #[tokio::test]
@@ -343,5 +586,79 @@ mod tests {
         assert!(body.contains("event: response.failed"));
         assert!(body.contains("invalid_provider_response"));
         assert!(!body.contains("event: response.completed"));
+    }
+
+    #[tokio::test]
+    async fn websocket_relays_the_same_canonical_events() {
+        let provider: Arc<dyn Provider> = Arc::new(ScriptedProvider { abrupt_eof: false });
+        let (address, task) = spawn(test_app(Some(provider))).await;
+        let mut socket = connect_ws(address, CAPABILITY).await;
+
+        socket
+            .send(TungsteniteMessage::Text(payload().to_string().into()))
+            .await
+            .expect("send response.create");
+
+        assert_eq!(next_ws_json(&mut socket).await["type"], "response.created");
+        assert_eq!(
+            next_ws_json(&mut socket).await["type"],
+            "response.output_text.delta"
+        );
+        assert_eq!(
+            next_ws_json(&mut socket).await["type"],
+            "response.completed"
+        );
+
+        socket.close(None).await.expect("close websocket");
+        task.abort();
+    }
+
+    #[tokio::test]
+    async fn websocket_abrupt_eof_is_failure_not_completion() {
+        let provider: Arc<dyn Provider> = Arc::new(ScriptedProvider { abrupt_eof: true });
+        let (address, task) = spawn(test_app(Some(provider))).await;
+        let mut socket = connect_ws(address, CAPABILITY).await;
+
+        socket
+            .send(TungsteniteMessage::Text(payload().to_string().into()))
+            .await
+            .expect("send response.create");
+
+        assert_eq!(next_ws_json(&mut socket).await["type"], "response.created");
+        assert_eq!(
+            next_ws_json(&mut socket).await["type"],
+            "response.output_text.delta"
+        );
+        let terminal = next_ws_json(&mut socket).await;
+        assert_eq!(terminal["type"], "response.failed");
+        assert_eq!(
+            terminal["response"]["error"]["code"],
+            "invalid_provider_response"
+        );
+
+        socket.close(None).await.expect("close websocket");
+        task.abort();
+    }
+
+    #[tokio::test]
+    async fn websocket_requires_beta_before_upgrade() {
+        let provider: Arc<dyn Provider> = Arc::new(ScriptedProvider { abrupt_eof: false });
+        let (address, task) = spawn(test_app(Some(provider))).await;
+        let url = format!(
+            "ws://{address}/_codex-unified/{CAPABILITY}/v1/responses"
+        );
+
+        let error = connect_async(url)
+            .await
+            .expect_err("missing beta must reject upgrade");
+
+        match error {
+            tokio_tungstenite::tungstenite::Error::Http(response) => {
+                assert_eq!(response.status(), StatusCode::UPGRADE_REQUIRED);
+            }
+            other => panic!("unexpected WebSocket error: {other}"),
+        }
+
+        task.abort();
     }
 }
