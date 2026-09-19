@@ -111,9 +111,11 @@ mod tests {
             .remove("client_metadata");
 
         assert_eq!(envelope.identity.turn_id, "turn-1");
-        assert!(envelope
-            .client_metadata
-            .get("x-codex-turn-metadata")
-            .is_some());
+        assert!(
+            envelope
+                .client_metadata
+                .get("x-codex-turn-metadata")
+                .is_some()
+        );
     }
 }
