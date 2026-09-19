@@ -1,5 +1,5 @@
-use axum::{routing::get, Json, Router};
-use serde_json::{json, Value};
+use axum::{Json, Router, routing::get};
+use serde_json::{Value, json};
 use std::net::SocketAddr;
 use tracing_subscriber::EnvFilter;
 
@@ -28,5 +28,7 @@ async fn main() {
         .expect("bind codex-unifiedd");
 
     tracing::info!(%address, "codex-unifiedd listening");
-    axum::serve(listener, app).await.expect("serve codex-unifiedd");
+    axum::serve(listener, app)
+        .await
+        .expect("serve codex-unifiedd");
 }
