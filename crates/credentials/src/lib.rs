@@ -41,11 +41,13 @@ impl CredentialResolver for KeyringCredentialResolver {
             Ok(secret)
         })
         .await
-        .map_err(|_| classified(
-            FailureCode::TransportFailed,
-            "credential lookup task failed",
-            false,
-        ))?;
+        .map_err(|_| {
+            classified(
+                FailureCode::TransportFailed,
+                "credential lookup task failed",
+                false,
+            )
+        })?;
 
         result.map_err(|error| match error {
             CredentialStoreError::Unavailable => classified(
@@ -93,11 +95,7 @@ fn parse_keychain_ref(credential_ref: &str) -> Result<String, ProviderError> {
     Ok(account.to_owned())
 }
 
-fn classified(
-    code: FailureCode,
-    message: impl Into<String>,
-    retryable: bool,
-) -> ProviderError {
+fn classified(code: FailureCode, message: impl Into<String>, retryable: bool) -> ProviderError {
     ProviderError::Classified {
         code,
         message: message.into(),
