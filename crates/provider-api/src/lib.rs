@@ -6,7 +6,7 @@ use codex_unified_protocol::{CanonicalEvent, FailureCode, TurnEnvelope};
 use eventsource_stream::Eventsource;
 use futures_util::{StreamExt, stream};
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::Value;
 use std::sync::Arc;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -471,6 +471,7 @@ mod tests {
     };
     use codex_unified_core::validated_event_stream;
     use futures_util::StreamExt;
+    use serde_json::json;
     use std::{
         net::SocketAddr,
         sync::{Arc, Mutex},
