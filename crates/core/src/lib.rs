@@ -83,11 +83,7 @@ impl StaticProviderResolver {
         self.routes.insert(model.into(), provider)
     }
 
-    pub fn with_route(
-        mut self,
-        model: impl Into<String>,
-        provider: Arc<dyn Provider>,
-    ) -> Self {
+    pub fn with_route(mut self, model: impl Into<String>, provider: Arc<dyn Provider>) -> Self {
         self.insert(model, provider);
         self
     }
