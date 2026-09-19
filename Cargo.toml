@@ -2,6 +2,7 @@
 members = [
   "crates/protocol",
   "crates/core",
+  "crates/credentials",
   "crates/state",
   "crates/provider-api",
   "crates/provider-web",
@@ -23,6 +24,7 @@ clap = { version = "4", features = ["derive"] }
 eventsource-stream = "0.2.3"
 futures-core = "0.3"
 futures-util = "0.3"
+keyring = "4.2.0"
 reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
