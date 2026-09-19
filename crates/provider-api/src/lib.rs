@@ -1,7 +1,11 @@
 use async_trait::async_trait;
-use codex_unified_core::{Provider, ProviderCapabilities, ProviderError};
+use codex_unified_core::{
+    Provider, ProviderCapabilities, ProviderError, ProviderEventStream, ProviderResolver,
+};
 use codex_unified_protocol::{CanonicalEvent, TurnEnvelope};
+use futures_util::stream;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -72,11 +76,7 @@ impl ApiRouteTable {
     }
 }
 
-/// Ordinary API-backed provider scaffold.
-///
-/// The route table is explicit and provider-owned. There is no global
-/// normalization stage that can erase Codex-native identity or apply one
-/// provider's compatibility workaround to another provider.
+#[derive(Debug, Clone)]
 pub struct ApiProvider {
     pub route: ApiRoute,
 }
@@ -96,14 +96,38 @@ impl Provider for ApiProvider {
         }
     }
 
-    async fn execute(&self, turn: TurnEnvelope) -> Result<Vec<CanonicalEvent>, ProviderError> {
+    async fn execute(&self, turn: TurnEnvelope) -> Result<ProviderEventStream, ProviderError> {
+        // Live HTTP forwarding lands in the next slice. This stub exercises the
+        // canonical provider stream without inventing provider-specific transforms.
         let response_id = format!("api-stub-{}", turn.identity.turn_id);
-        Ok(vec![
-            CanonicalEvent::ResponseCreated {
+        Ok(Box::pin(stream::iter(vec![
+            Ok(CanonicalEvent::ResponseCreated {
                 response_id: response_id.clone(),
-            },
-            CanonicalEvent::ResponseCompleted { response_id },
-        ])
+            }),
+            Ok(CanonicalEvent::ResponseCompleted { response_id }),
+        ])))
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ApiProviderResolver {
+    routes: ApiRouteTable,
+}
+
+impl ApiProviderResolver {
+    pub fn new(routes: ApiRouteTable) -> Self {
+        Self { routes }
+    }
+}
+
+impl ProviderResolver for ApiProviderResolver {
+    fn resolve(&self, model: &str) -> Option<Arc<dyn Provider>> {
+        match self.routes.resolve(model) {
+            RouteResolution::Matched { route, .. } => {
+                Some(Arc::new(ApiProvider { route: route.clone() }))
+            }
+            RouteResolution::NoMatch | RouteResolution::Ambiguous => None,
+        }
     }
 }
 
@@ -171,5 +195,13 @@ mod tests {
             table.resolve("openrouter/model"),
             RouteResolution::Ambiguous
         );
+    }
+
+    #[test]
+    fn resolver_refuses_ambiguous_route() {
+        let mut duplicate = openrouter();
+        duplicate.provider_id = "other".into();
+        let resolver = ApiProviderResolver::new(ApiRouteTable::new(vec![openrouter(), duplicate]));
+        assert!(resolver.resolve("openrouter/model").is_none());
     }
 }

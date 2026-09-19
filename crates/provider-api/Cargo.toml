@@ -10,3 +10,4 @@ codex-unified-core = { path = "../core" }
 codex-unified-protocol = { path = "../protocol" }
 
 serde.workspace = true
+futures-util.workspace = true

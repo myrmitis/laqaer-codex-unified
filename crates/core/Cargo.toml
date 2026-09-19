@@ -7,5 +7,10 @@ license.workspace = true
 [dependencies]
 async-trait.workspace = true
 codex-unified-protocol = { path = "../protocol" }
+futures-core.workspace = true
+futures-util.workspace = true
 serde.workspace = true
 thiserror.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true

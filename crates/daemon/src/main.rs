@@ -15,7 +15,7 @@ async fn main() {
     let capability = std::env::var("CODEX_UNIFIED_CAPABILITY")
         .expect("CODEX_UNIFIED_CAPABILITY must be set by the service supervisor");
 
-    let app = app(AppConfig { capability });
+    let app = app(AppConfig::foundation(capability));
     let address = SocketAddr::from(([127, 0, 0, 1], 4317));
     let listener = tokio::net::TcpListener::bind(address)
         .await
