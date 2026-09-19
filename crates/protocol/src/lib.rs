@@ -111,7 +111,10 @@ impl TurnEnvelope {
 }
 
 fn optional_string(object: &Map<String, Value>, key: &str) -> Option<String> {
-    object.get(key).and_then(Value::as_str).map(ToOwned::to_owned)
+    object
+        .get(key)
+        .and_then(Value::as_str)
+        .map(ToOwned::to_owned)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -194,9 +197,8 @@ mod tests {
         });
 
         let encoded = serde_json::to_string(&turn).expect("encode fixture");
-        let envelope =
-            TurnEnvelope::from_responses_request(request(Value::String(encoded)))
-                .expect("parse fixture");
+        let envelope = TurnEnvelope::from_responses_request(request(Value::String(encoded)))
+            .expect("parse fixture");
 
         let mut provider_payload = envelope.raw_request.clone();
         provider_payload
@@ -206,10 +208,12 @@ mod tests {
 
         assert_eq!(envelope.identity.turn_id, "turn-1");
         assert_eq!(envelope.identity.thread_id.as_deref(), Some("thread-1"));
-        assert!(envelope
-            .client_metadata
-            .get("x-codex-turn-metadata")
-            .is_some());
+        assert!(
+            envelope
+                .client_metadata
+                .get("x-codex-turn-metadata")
+                .is_some()
+        );
     }
 
     #[test]
@@ -220,14 +224,11 @@ mod tests {
             "request_kind": "turn"
         });
 
-        let envelope = TurnEnvelope::from_responses_request(request(turn))
-            .expect("parse structured metadata");
+        let envelope =
+            TurnEnvelope::from_responses_request(request(turn)).expect("parse structured metadata");
 
         assert_eq!(envelope.identity.turn_id, "turn-2");
-        assert_eq!(
-            envelope.previous_response_id.as_deref(),
-            Some("response-1")
-        );
+        assert_eq!(envelope.previous_response_id.as_deref(), Some("response-1"));
         assert_eq!(envelope.prompt_cache_key.as_deref(), Some("cache-1"));
     }
 
@@ -238,6 +239,9 @@ mod tests {
             "input": []
         }));
 
-        assert_eq!(result.expect_err("must reject"), TurnEnvelopeError::MissingTurnMetadata);
+        assert_eq!(
+            result.expect_err("must reject"),
+            TurnEnvelopeError::MissingTurnMetadata
+        );
     }
 }
