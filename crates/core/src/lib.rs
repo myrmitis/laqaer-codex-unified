@@ -3,7 +3,7 @@ use codex_unified_protocol::{CanonicalEvent, FailureCode, TurnEnvelope};
 use futures_core::Stream;
 use futures_util::{StreamExt, stream};
 use serde::{Deserialize, Serialize};
-use std::{pin::Pin, sync::Arc};
+use std::{collections::HashMap, pin::Pin, sync::Arc};
 use thiserror::Error;
 
 pub type ProviderEventStream =
@@ -62,6 +62,48 @@ pub struct EmptyProviderResolver;
 impl ProviderResolver for EmptyProviderResolver {
     fn resolve(&self, _model: &str) -> Option<Arc<dyn Provider>> {
         None
+    }
+}
+
+#[derive(Default)]
+pub struct StaticProviderResolver {
+    routes: HashMap<String, Arc<dyn Provider>>,
+}
+
+impl StaticProviderResolver {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn insert(
+        &mut self,
+        model: impl Into<String>,
+        provider: Arc<dyn Provider>,
+    ) -> Option<Arc<dyn Provider>> {
+        self.routes.insert(model.into(), provider)
+    }
+
+    pub fn with_route(
+        mut self,
+        model: impl Into<String>,
+        provider: Arc<dyn Provider>,
+    ) -> Self {
+        self.insert(model, provider);
+        self
+    }
+
+    pub fn len(&self) -> usize {
+        self.routes.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.routes.is_empty()
+    }
+}
+
+impl ProviderResolver for StaticProviderResolver {
+    fn resolve(&self, model: &str) -> Option<Arc<dyn Provider>> {
+        self.routes.get(model).cloned()
     }
 }
 
