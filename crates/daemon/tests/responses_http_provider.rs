@@ -6,9 +6,7 @@ use axum::{
     routing::post,
 };
 use codex_unified_core::{Provider, StaticProviderResolver};
-use codex_unified_provider_api::{
-    CredentialSource, ResponsesHttpProvider, ResponsesHttpRoute,
-};
+use codex_unified_provider_api::{CredentialSource, ResponsesHttpProvider, ResponsesHttpRoute};
 use codex_unifiedd::{AppConfig, app};
 use serde_json::{Value, json};
 use std::sync::{Arc, Mutex};
@@ -20,9 +18,7 @@ const CAPABILITY: &str = "integration-capability-0123456789";
 struct StaticCredential;
 
 impl CredentialSource for StaticCredential {
-    fn load(
-        &self,
-    ) -> Result<Zeroizing<String>, codex_unified_core::ProviderError> {
+    fn load(&self) -> Result<Zeroizing<String>, codex_unified_core::ProviderError> {
         Ok(Zeroizing::new("integration-secret".to_owned()))
     }
 }
@@ -72,11 +68,7 @@ async fn mock_upstream() -> (String, Arc<Capture>, tokio::task::JoinHandle<()>) 
             .await
             .expect("serve upstream fixture");
     });
-    (
-        format!("http://{address}/v1/responses"),
-        capture,
-        task,
-    )
+    (format!("http://{address}/v1/responses"), capture, task)
 }
 
 #[tokio::test]
@@ -90,8 +82,7 @@ async fn codex_request_routes_through_openrouter_responses_contract() {
         Arc::new(StaticCredential),
     );
     let provider: Arc<dyn Provider> = Arc::new(ResponsesHttpProvider::new(route));
-    let resolver = StaticProviderResolver::new()
-        .with_route("openrouter/grok-4.6", provider);
+    let resolver = StaticProviderResolver::new().with_route("openrouter/grok-4.6", provider);
 
     let router = app(AppConfig {
         capability: CAPABILITY.to_owned(),
@@ -116,9 +107,7 @@ async fn codex_request_routes_through_openrouter_responses_contract() {
 
     let request = axum::http::Request::builder()
         .method("POST")
-        .uri(format!(
-            "/_codex-unified/{CAPABILITY}/v1/responses"
-        ))
+        .uri(format!("/_codex-unified/{CAPABILITY}/v1/responses"))
         .header(header::CONTENT_TYPE, "application/json")
         .body(axum::body::Body::from(
             serde_json::to_vec(&request_body).expect("request body"),
