@@ -48,10 +48,7 @@ impl Provider for WebProvider {
         }
     }
 
-    async fn execute(
-        &self,
-        turn: TurnEnvelope,
-    ) -> Result<Vec<CanonicalEvent>, ProviderError> {
+    async fn execute(&self, turn: TurnEnvelope) -> Result<Vec<CanonicalEvent>, ProviderError> {
         self.preflight()?;
 
         // Browser RPC lands in Phase 2. The provider already enforces the
