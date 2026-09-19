@@ -73,7 +73,7 @@ async fn responses(
 }
 
 fn turn_error_response(error: TurnEnvelopeError) -> Response {
-    let code = match error {
+    let code = match &error {
         TurnEnvelopeError::MissingTurnMetadata | TurnEnvelopeError::MissingTurnId => {
             "native_turn_metadata_required"
         }
