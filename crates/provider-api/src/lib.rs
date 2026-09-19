@@ -669,7 +669,6 @@ mod tests {
         }
     }
 
-    #[derive(Default)]
     struct Capture {
         requests: Mutex<Vec<(String, Value)>>,
         status: Mutex<AxumStatusCode>,
