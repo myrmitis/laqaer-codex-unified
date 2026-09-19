@@ -13,7 +13,7 @@ use axum::{
 };
 use codex_unified_core::{EmptyProviderResolver, ProviderResolver, validated_event_stream};
 use codex_unified_protocol::{CanonicalEvent, TurnEnvelope, TurnEnvelopeError, TurnIdentity};
-use futures_util::{SinkExt, StreamExt};
+use futures_util::StreamExt;
 use serde_json::{Value, json};
 use std::{
     collections::HashSet,
