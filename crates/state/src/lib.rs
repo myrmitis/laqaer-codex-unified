@@ -45,11 +45,9 @@ impl StateStore {
 
         let current: Option<i64> = self
             .conn
-            .query_row(
-                "SELECT MAX(version) FROM schema_migrations",
-                [],
-                |row| row.get(0),
-            )
+            .query_row("SELECT MAX(version) FROM schema_migrations", [], |row| {
+                row.get(0)
+            })
             .optional()?
             .flatten();
 
@@ -101,6 +99,9 @@ mod tests {
     #[test]
     fn creates_current_schema() {
         let store = StateStore::open_memory().expect("open memory state");
-        assert_eq!(store.schema_version().expect("schema version"), SCHEMA_VERSION);
+        assert_eq!(
+            store.schema_version().expect("schema version"),
+            SCHEMA_VERSION
+        );
     }
 }
