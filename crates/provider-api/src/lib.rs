@@ -24,10 +24,7 @@ impl Provider for ApiProvider {
         }
     }
 
-    async fn execute(
-        &self,
-        turn: TurnEnvelope,
-    ) -> Result<Vec<CanonicalEvent>, ProviderError> {
+    async fn execute(&self, turn: TurnEnvelope) -> Result<Vec<CanonicalEvent>, ProviderError> {
         let response_id = format!("api-stub-{}", turn.identity.turn_id);
         Ok(vec![
             CanonicalEvent::ResponseCreated {
