@@ -18,4 +18,6 @@ tracing-subscriber.workspace = true
 
 [dev-dependencies]
 async-trait.workspace = true
+codex-unified-provider-api = { path = "../provider-api" }
 tokio-tungstenite.workspace = true
+zeroize.workspace = true
