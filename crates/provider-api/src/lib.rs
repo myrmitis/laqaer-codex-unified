@@ -51,10 +51,11 @@ impl ApiRouteTable {
     }
 
     pub fn resolve<'a>(&'a self, model: &'a str) -> RouteResolution<'a> {
-        let mut matches = self
-            .routes
-            .iter()
-            .filter_map(|route| route.upstream_model(model).map(|upstream| (route, upstream)));
+        let mut matches = self.routes.iter().filter_map(|route| {
+            route
+                .upstream_model(model)
+                .map(|upstream| (route, upstream))
+        });
 
         let Some((route, upstream_model)) = matches.next() else {
             return RouteResolution::NoMatch;
