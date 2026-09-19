@@ -123,9 +123,9 @@ impl ApiProviderResolver {
 impl ProviderResolver for ApiProviderResolver {
     fn resolve(&self, model: &str) -> Option<Arc<dyn Provider>> {
         match self.routes.resolve(model) {
-            RouteResolution::Matched { route, .. } => {
-                Some(Arc::new(ApiProvider { route: route.clone() }))
-            }
+            RouteResolution::Matched { route, .. } => Some(Arc::new(ApiProvider {
+                route: route.clone(),
+            })),
             RouteResolution::NoMatch | RouteResolution::Ambiguous => None,
         }
     }
