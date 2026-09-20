@@ -44,6 +44,7 @@ jobs:
           node-version: "24"
       - run: npm install --ignore-scripts --no-audit --no-fund
       - run: npm run check
+      - run: npm test
 
   public-cross-platform:
     if: ${{ github.event.repository.private == false }}
