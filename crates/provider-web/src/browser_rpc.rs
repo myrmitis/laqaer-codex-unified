@@ -317,7 +317,9 @@ mod tests {
             .expect("bind mock browser RPC");
         let address = listener.local_addr().expect("mock address");
         let handle = tokio::spawn(async move {
-            axum::serve(listener, app).await.expect("serve mock browser RPC");
+            axum::serve(listener, app)
+                .await
+                .expect("serve mock browser RPC");
         });
         (format!("http://127.0.0.1:{}/", address.port()), handle)
     }
@@ -428,11 +430,8 @@ mod tests {
     #[tokio::test]
     async fn wrong_capability_is_rejected() {
         let (origin, handle) = start_mock().await;
-        let client = BrowserRpcClient::new(
-            &origin,
-            "wrong-browser-capability-0123456789",
-        )
-        .expect("client");
+        let client =
+            BrowserRpcClient::new(&origin, "wrong-browser-capability-0123456789").expect("client");
 
         assert!(matches!(
             client.session().await,
