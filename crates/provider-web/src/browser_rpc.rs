@@ -1,3 +1,4 @@
+use async_trait::async_trait;
 use reqwest::{Client, StatusCode, Url};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -110,6 +111,16 @@ pub enum BrowserRpcError {
     InvalidResponse,
     #[error("browser RPC transport failed")]
     Transport(#[from] reqwest::Error),
+}
+
+#[async_trait]
+pub trait BrowserRpcBackend: Send + Sync {
+    async fn session(&self) -> Result<BrowserSessionSnapshot, BrowserRpcError>;
+
+    async fn execute_turn(
+        &self,
+        request: &BrowserTurnRequest,
+    ) -> Result<BrowserTurnResult, BrowserRpcError>;
 }
 
 #[derive(Clone)]
@@ -227,6 +238,20 @@ impl BrowserRpcClient {
     }
 }
 
+#[async_trait]
+impl BrowserRpcBackend for BrowserRpcClient {
+    async fn session(&self) -> Result<BrowserSessionSnapshot, BrowserRpcError> {
+        BrowserRpcClient::session(self).await
+    }
+
+    async fn execute_turn(
+        &self,
+        request: &BrowserTurnRequest,
+    ) -> Result<BrowserTurnResult, BrowserRpcError> {
+        BrowserRpcClient::execute_turn(self, request).await
+    }
+}
+
 #[derive(Debug, Deserialize)]
 struct SessionWire {
     protocol: u64,
@@ -309,7 +334,6 @@ mod tests {
         let app = Router::new()
             .route("/v1/session", get(mock_session))
             .route("/v1/turn", post(mock_turn))
-            .route("/v1/protocol-mismatch", post(mock_protocol_mismatch))
             .with_state(state);
 
         let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
@@ -361,18 +385,6 @@ mod tests {
             "responseId": "response-pro",
             "text": "PRO OK"
         })))
-    }
-
-    async fn mock_protocol_mismatch() -> (StatusCode, Json<Value>) {
-        (
-            StatusCode::CONFLICT,
-            Json(json!({
-                "ok": false,
-                "code": "rpc_protocol_mismatch",
-                "message": "mismatch",
-                "protocol": 2
-            })),
-        )
     }
 
     #[test]
