@@ -1,7 +1,7 @@
 import type {
   BrowserFailure,
   BrowserSessionState,
-} from "./protocol.js";
+} from "./protocol.ts";
 
 const AUTH_PROVIDER_HOSTS = new Set([
   "auth.openai.com",
