@@ -1,13 +1,13 @@
 import {
   browserSession,
   executeBrowserTurn,
-} from "./index.js";
+} from "./index.ts";
 import {
   BROWSER_RPC_PROTOCOL,
-} from "./protocol.js";
+} from "./protocol.ts";
 import {
   startBrowserRpcServer,
-} from "./rpc-server.js";
+} from "./rpc-server.ts";
 
 const capability = process.env.CODEX_UNIFIED_BROWSER_CAPABILITY;
 if (!capability) {
