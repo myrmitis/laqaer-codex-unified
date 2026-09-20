@@ -1,5 +1,5 @@
-import { BrowserSession } from "./session-state.js";
-import type { BrowserTurnRequest, BrowserTurnResult } from "./protocol.js";
+import { BrowserSession } from "./session-state.ts";
+import type { BrowserTurnRequest, BrowserTurnResult } from "./protocol.ts";
 
 const session = new BrowserSession();
 
