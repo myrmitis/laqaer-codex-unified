@@ -3,6 +3,8 @@ use codex_unified_core::{Provider, ProviderCapabilities, ProviderError, Provider
 use codex_unified_protocol::{CanonicalEvent, FailureCode, TurnEnvelope};
 use futures_util::stream;
 
+pub mod browser_rpc;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BrowserSessionState {
     LoggedOut,
@@ -52,8 +54,7 @@ impl Provider for WebProvider {
     async fn execute(&self, turn: TurnEnvelope) -> Result<ProviderEventStream, ProviderError> {
         self.preflight()?;
 
-        // Browser RPC lands in Phase 2. The provider already enforces the
-        // critical invariant: an unhealthy session never starts physical work.
+        // The real RPC-backed execution replaces this stub in the next slice.
         let response_id = format!("web-stub-{}", turn.identity.turn_id);
         Ok(Box::pin(stream::iter(vec![
             Ok(CanonicalEvent::ResponseCreated {
