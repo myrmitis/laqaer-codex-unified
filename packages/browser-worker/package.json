@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "check": "tsc --noEmit",
-    "test": "node --test src/**/*.test.ts"
+    "test": "node --test src/**/*.test.ts",
+    "rpc": "node src/rpc-main.ts"
   },
   "devDependencies": {
     "typescript": "^5.9.0",

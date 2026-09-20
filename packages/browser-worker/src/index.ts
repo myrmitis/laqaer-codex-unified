@@ -11,10 +11,11 @@ export function browserSession(): BrowserSession {
   return session;
 }
 
-export async function executeBrowserTurn(
+export async function executeBrowserTurnForSession(
+  targetSession: BrowserSession,
   request: BrowserTurnRequest,
 ): Promise<BrowserTurnResult> {
-  const preflight = session.preflightFailure();
+  const preflight = targetSession.preflightFailure();
   if (preflight) return preflight;
 
   // Electron/Playwright execution lands in the next Phase 2 slice. This
@@ -26,4 +27,10 @@ export async function executeBrowserTurn(
     message: `Browser transport is not implemented for ${request.mode}`,
     retryable: false,
   };
+}
+
+export async function executeBrowserTurn(
+  request: BrowserTurnRequest,
+): Promise<BrowserTurnResult> {
+  return executeBrowserTurnForSession(session, request);
 }
