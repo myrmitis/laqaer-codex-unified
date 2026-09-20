@@ -6,7 +6,7 @@ import {
   type ServerResponse,
 } from "node:http";
 import type { AddressInfo } from "node:net";
-import { BrowserSession } from "./session-state.js";
+import { BrowserSession } from "./session-state.ts";
 import {
   BROWSER_RPC_PROTOCOL,
   type BrowserRpcFailure,
@@ -15,7 +15,7 @@ import {
   type BrowserTurnRequest,
   type BrowserTurnResult,
   type WebMode,
-} from "./protocol.js";
+} from "./protocol.ts";
 
 const CAPABILITY_HEADER = "x-codex-unified-browser-capability";
 const MAX_JSON_BYTES = 2 * 1024 * 1024;
