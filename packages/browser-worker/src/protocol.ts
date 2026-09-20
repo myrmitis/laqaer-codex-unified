@@ -1,3 +1,5 @@
+export const BROWSER_RPC_PROTOCOL = 1 as const;
+
 export type BrowserSessionState =
   | "logged_out"
   | "authenticating"
@@ -19,7 +21,7 @@ export interface BrowserTurnIdentity {
 }
 
 export interface BrowserTurnRequest {
-  protocol: 1;
+  protocol: typeof BROWSER_RPC_PROTOCOL;
   traceId: string;
   identity: BrowserTurnIdentity;
   mode: WebMode;
@@ -49,3 +51,28 @@ export type BrowserTurnResult =
       text: string;
     }
   | BrowserFailure;
+
+export interface BrowserSessionSnapshot {
+  protocol: typeof BROWSER_RPC_PROTOCOL;
+  state: BrowserSessionState;
+  revision: number;
+}
+
+export interface BrowserRpcHealth {
+  service: "codex-unified-browser-worker";
+  protocol: typeof BROWSER_RPC_PROTOCOL;
+  status: "ok";
+}
+
+export type BrowserRpcFailureCode =
+  | "rpc_unauthorized"
+  | "rpc_protocol_mismatch"
+  | "rpc_invalid_request"
+  | "rpc_payload_too_large"
+  | "rpc_internal_error";
+
+export interface BrowserRpcFailure {
+  ok: false;
+  code: BrowserRpcFailureCode;
+  message: string;
+}
