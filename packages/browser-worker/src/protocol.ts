@@ -35,15 +35,17 @@ export type BrowserFailureCode =
   | "web_continuation_missing"
   | "web_transport_failed";
 
+export interface BrowserFailure {
+  ok: false;
+  code: BrowserFailureCode;
+  message: string;
+  retryable: boolean;
+}
+
 export type BrowserTurnResult =
   | {
       ok: true;
       responseId: string;
       text: string;
     }
-  | {
-      ok: false;
-      code: BrowserFailureCode;
-      message: string;
-      retryable: boolean;
-    };
+  | BrowserFailure;
