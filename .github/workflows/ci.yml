@@ -46,6 +46,47 @@ jobs:
       - run: npm run check
       - run: npm test
 
+  browser-rpc-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      BROWSER_RPC_ORIGIN: http://127.0.0.1:17991/
+      BROWSER_RPC_CAPABILITY: browser-contract-capability-0123456789
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: "24"
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+      - name: Install browser worker dependencies
+        working-directory: packages/browser-worker
+        run: npm install --ignore-scripts --no-audit --no-fund
+      - name: Start TypeScript browser RPC fixture
+        working-directory: packages/browser-worker
+        shell: bash
+        run: |
+          CODEX_UNIFIED_BROWSER_CAPABILITY="$BROWSER_RPC_CAPABILITY"           CODEX_UNIFIED_BROWSER_PORT=17991           node test/contract-server.ts > "$RUNNER_TEMP/browser-rpc-contract.log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/browser-rpc-contract.pid"
+          for attempt in {1..30}; do
+            if curl --fail --silent --show-error http://127.0.0.1:17991/healthz >/dev/null; then
+              exit 0
+            fi
+            sleep 0.2
+          done
+          cat "$RUNNER_TEMP/browser-rpc-contract.log"
+          exit 1
+      - name: Probe TypeScript RPC from Rust client
+        run: cargo run --quiet -p codex-unified-provider-web --example rpc_contract_probe
+      - name: Stop browser RPC fixture
+        if: always()
+        shell: bash
+        run: |
+          if [ -f "$RUNNER_TEMP/browser-rpc-contract.pid" ]; then
+            kill "$(cat "$RUNNER_TEMP/browser-rpc-contract.pid")" 2>/dev/null || true
+          fi
+
   public-cross-platform:
     if: ${{ github.event.repository.private == false }}
     name: rust (${{ matrix.os }})
