@@ -70,7 +70,11 @@ impl Provider for WebProvider {
             turn.previous_response_id.clone(),
         );
 
-        let result = self.rpc.execute_turn(&request).await.map_err(map_rpc_error)?;
+        let result = self
+            .rpc
+            .execute_turn(&request)
+            .await
+            .map_err(map_rpc_error)?;
         match result {
             BrowserTurnResult::Success { response_id, text } => {
                 let item_id = format!("{response_id}-text");
