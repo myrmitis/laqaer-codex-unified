@@ -252,10 +252,10 @@ mod tests {
         ));
         let provider = WebProvider::new(backend.clone());
 
-        let error = provider
-            .execute(turn("chatgpt-web/instant"))
-            .await
-            .expect_err("preflight must fail");
+        let error = match provider.execute(turn("chatgpt-web/instant")).await {
+            Err(error) => error,
+            Ok(_) => panic!("preflight must fail"),
+        };
 
         assert!(matches!(
             error,
@@ -320,10 +320,10 @@ mod tests {
         ));
         let provider = WebProvider::new(backend);
 
-        let error = provider
-            .execute(turn("chatgpt-web/high"))
-            .await
-            .expect_err("browser failure");
+        let error = match provider.execute(turn("chatgpt-web/high")).await {
+            Err(error) => error,
+            Ok(_) => panic!("browser failure must fail"),
+        };
 
         assert!(matches!(
             error,
